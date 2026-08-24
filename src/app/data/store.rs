@@ -93,6 +93,11 @@ pub struct InnerData {
     prev_io: FxHashMap<(String, String), (u64, u64)>,
     pub(crate) disk_harvest: Vec<DiskWidgetData>,
     pub(crate) temp_data: Vec<TempWidgetData>,
+    pub(crate) claude_sessions: Vec<crate::collection::claude::ClaudeSession>,
+    pub(crate) claude_rate_limits: Option<crate::collection::claude::RateLimits>,
+    /// Cumulative per-family totals from the previous tick, so the graph can difference
+    /// them into a rate. Keyed by family label.
+    prev_claude_tokens: FxHashMap<String, u64>,
     #[cfg(feature = "battery")]
     pub(crate) battery_harvest: Vec<batteries::BatteryData>,
 
@@ -116,6 +121,9 @@ impl Default for InnerData {
             prev_io: FxHashMap::default(),
             disk_harvest: Vec::default(),
             temp_data: Vec::default(),
+            claude_sessions: Vec::default(),
+            claude_rate_limits: None,
+            prev_claude_tokens: FxHashMap::default(),
             #[cfg(feature = "battery")]
             battery_harvest: Vec::default(),
             #[cfg(feature = "zfs")]
@@ -222,6 +230,23 @@ impl InnerData {
                     settings.disk_io_graph_show_unmounted,
                 );
             }
+        }
+
+        if used_widgets.use_claude
+            && let Some(claude) = data.claude
+        {
+            let elapsed = harvested_time
+                .duration_since(self.last_update_time)
+                .as_secs_f64();
+
+            self.time_series_data.update_claude_tokens(
+                &claude.totals,
+                &mut self.prev_claude_tokens,
+                elapsed,
+            );
+
+            self.claude_sessions = claude.sessions;
+            self.claude_rate_limits = claude.rate_limits;
         }
 
         if used_widgets.use_power {

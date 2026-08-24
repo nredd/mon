@@ -142,6 +142,14 @@ These can be set under `[styles.power]`. macOS + Apple Silicon only -- see
 | ------------ | ------------------------------------------------------------------------------------------- | -------------------------------------------- |
 | `colours`    | Colour of each power channel's graph line. Read in channel order: system, CPU, GPU, ANE, RAM. | `colours = ["Red", "Blue", "Green"]`        |
 
+#### Claude
+
+These can be set under `[styles.claude]` -- see [the Claude widgets page](claude.md).
+
+| Config field | Details                                                                                    | Examples                              |
+| ------------ | ------------------------------------------------------------------------------------------ | ------------------------------------- |
+| `colours`    | Colour of each model family's graph line. Read in family order: Opus, Sonnet, Haiku, Fable, Other. | `colours = ["Red", "Blue", "Green"]` |
+
 #### Memory
 
 These can be set under `[styles.memory]`:

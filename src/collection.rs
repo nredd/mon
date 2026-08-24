@@ -16,6 +16,7 @@ mod linux {
 
 #[cfg(feature = "battery")]
 pub mod batteries;
+pub mod claude;
 pub mod cpu;
 pub mod disks;
 pub mod error;
@@ -57,6 +58,7 @@ pub struct Data {
     #[cfg(feature = "battery")]
     pub list_of_batteries: Option<Vec<batteries::BatteryData>>,
     pub power: Option<power::PowerData>,
+    pub claude: Option<claude::ClaudeData>,
     #[cfg(feature = "zfs")]
     pub arc: Option<memory::MemData>,
     #[cfg(feature = "gpu")]
@@ -81,6 +83,7 @@ impl Default for Data {
             #[cfg(feature = "battery")]
             list_of_batteries: None,
             power: None,
+            claude: None,
             #[cfg(feature = "zfs")]
             arc: None,
             #[cfg(feature = "gpu")]
@@ -194,6 +197,9 @@ pub struct DataCollector {
     #[cfg(target_os = "macos")]
     power_interval_ms: u32,
 
+    /// Built lazily, the first time a layout actually asks for Claude data.
+    claude_collector: Option<claude::ClaudeCollector>,
+
     #[cfg(unix)]
     user_table: processes::UserTable,
 
@@ -246,6 +252,7 @@ impl DataCollector {
             power_sampler: None,
             #[cfg(target_os = "macos")]
             power_interval_ms: 1000,
+            claude_collector: None,
             filters,
             #[cfg(unix)]
             user_table: Default::default(),
@@ -419,6 +426,8 @@ impl DataCollector {
 
         #[cfg(target_os = "macos")]
         self.update_power();
+
+        self.update_claude();
 
         #[cfg(feature = "gpu")]
         self.update_gpus();
@@ -625,6 +634,20 @@ impl DataCollector {
         // The first few collection ticks land before the sampler's first interval closes,
         // so `None` here is normal rather than an error.
         self.data.power = sampler.latest().cloned();
+    }
+
+    /// Update Claude Code metrics.
+    #[inline]
+    fn update_claude(&mut self) {
+        if !self.widgets_to_harvest.use_claude {
+            return;
+        }
+
+        let collector = self
+            .claude_collector
+            .get_or_insert_with(claude::ClaudeCollector::new);
+
+        self.data.claude = collector.harvest();
     }
 
     /// Update battery information.

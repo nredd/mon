@@ -1,0 +1,19 @@
+# Both Claude widgets in an explicit layout, so the canvas dispatch path is exercised.
+# Neither is in the default layout, and the three dispatch matches in `canvas.rs` all end in
+# `_ => {}`, so a missing arm compiles clean and silently renders nothing.
+
+[[row]]
+  [[row.child]]
+  type = "claude"
+  default = true
+
+[[row]]
+  [[row.child]]
+  type = "claude_graph"
+
+[claude]
+use_log = true
+legend_position = "top-right"
+
+[styles.claude]
+colours = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181"]

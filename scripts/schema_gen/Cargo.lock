@@ -119,6 +119,7 @@ dependencies = [
  "clap_complete_fig",
  "clap_complete_nushell",
  "clap_mangen",
+ "claude-metrics",
  "concat-string",
  "core-foundation",
  "crossterm",
@@ -263,6 +264,15 @@ checksum = "c630ddc90572b3d9abd3f887f0007b4e048faf5c5a59ae607f8ac1c5e3790873"
 dependencies = [
  "clap",
  "roff",
+]
+
+[[package]]
+name = "claude-metrics"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

@@ -170,6 +170,7 @@ nav:
           - "Temperature Graph Widget": usage/widgets/temperature-graph.md
           - "Disk I/O Graph Widget": usage/widgets/disk-io-graph.md
           - "Power Widget": usage/widgets/power.md
+          - "Claude Widgets": usage/widgets/claude.md
           - "Battery Widget": usage/widgets/battery.md
       - "Auto-Complete": usage/autocomplete.md
   - "Configuration":
@@ -185,6 +186,7 @@ nav:
           - "Temperature Graph Widget": configuration/config-file/temperature-graph.md
           - "Disk I/O Graph Widget": configuration/config-file/disk-io-graph.md
           - "Power Widget": configuration/config-file/power.md
+          - "Claude Widgets": configuration/config-file/claude.md
           - "Flags": configuration/config-file/flags.md
           - "Layout": configuration/config-file/layout.md
           - "Styling": configuration/config-file/styling.md

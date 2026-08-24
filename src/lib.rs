@@ -462,6 +462,12 @@ pub fn start_bottom(enable_error_hook: &mut bool) -> anyhow::Result<()> {
                             }
                         }
 
+                        if app.used_widgets.use_claude {
+                            for claude in app.states.claude_state.widget_states.values_mut() {
+                                claude.force_data_update();
+                            }
+                        }
+
                         app.update_data();
                         try_drawing(&mut terminal, &mut app, &mut painter)?;
                     }

@@ -47,7 +47,10 @@ impl Styles {
             cpu_colour_styles: list_colours.clone(),
             temp_graph_colour_styles: list_colours.clone(),
             disk_io_read_colour_styles: list_colours.clone(),
-            power_colour_styles: list_colours,
+            power_colour_styles: list_colours.clone(),
+            // Kept in this theme's own palette rather than the dataviz hues, so the
+            // theme still looks like itself.
+            claude_colour_styles: list_colours,
             disk_io_write_colour_styles: second_colours_list,
             border_style: hex!("#88c0d0"),
             highlighted_border_style: hex!("#5e81ac"),
@@ -109,7 +112,10 @@ impl Styles {
             cpu_colour_styles: list_colours.clone(),
             temp_graph_colour_styles: list_colours.clone(),
             disk_io_read_colour_styles: list_colours.clone(),
-            power_colour_styles: list_colours,
+            power_colour_styles: list_colours.clone(),
+            // Kept in this theme's own palette rather than the dataviz hues, so the
+            // theme still looks like itself.
+            claude_colour_styles: list_colours,
             disk_io_write_colour_styles: second_colours_list,
             border_style: hex!("#2e3440"),
             highlighted_border_style: hex!("#5e81ac"),

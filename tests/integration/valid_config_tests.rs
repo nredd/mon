@@ -310,6 +310,26 @@ fn test_disk_io_graph() {
 /// The three dispatch sites in `canvas.rs` all end in `_ => {}`, so a missing arm compiles
 /// clean and silently renders nothing. Asserting the rendered title reaches the pty is the
 /// only thing that catches it.
+/// Both Claude widgets have to actually draw, for the same reason the power widget does.
+#[test]
+fn test_claude_widgets_render() {
+    let rendered = run_and_capture(&["-C", "./tests/valid_configs/widget/claude.toml"]);
+
+    assert!(
+        !rendered.trim().is_empty(),
+        "the claude layout rendered an empty buffer"
+    );
+    assert!(
+        rendered.contains("Claude Sessions"),
+        "the sessions table did not draw its title -- likely a missing dispatch arm in \
+         `canvas.rs`. Rendered output was:\n{rendered}"
+    );
+    assert!(
+        rendered.contains("Claude Tokens"),
+        "the token-rate graph did not draw its title. Rendered output was:\n{rendered}"
+    );
+}
+
 #[test]
 fn test_power_graph_renders() {
     let rendered = run_and_capture(&["-C", "./tests/valid_configs/widget/power.toml"]);

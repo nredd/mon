@@ -940,6 +940,8 @@ pub enum BottomWidgetType {
     Disk,
     DiskIoGraph,
     Power,
+    Claude,
+    ClaudeGraph,
     BasicCpu,
     BasicMem,
     BasicNet,
@@ -955,7 +957,10 @@ impl BottomWidgetType {
 
     pub fn is_widget_graph(&self) -> bool {
         use BottomWidgetType::*;
-        matches!(self, Cpu | Net | Mem | TempGraph | DiskIoGraph | Power)
+        matches!(
+            self,
+            Cpu | Net | Mem | TempGraph | DiskIoGraph | Power | ClaudeGraph
+        )
     }
 
     pub fn get_pretty_name(&self) -> &str {
@@ -973,6 +978,8 @@ impl BottomWidgetType {
             // title, not a compile error. Upstream's `DiskIoGraph` is missing for exactly
             // that reason -- left alone here to keep this diff to the power widget.
             Power => "Power",
+            Claude => "Claude",
+            ClaudeGraph => "Claude Tokens",
             _ => "",
         }
     }
@@ -993,6 +1000,8 @@ impl std::str::FromStr for BottomWidgetType {
             "disk" => Ok(BottomWidgetType::Disk),
             "disk_io_graph" => Ok(BottomWidgetType::DiskIoGraph),
             "power" => Ok(BottomWidgetType::Power),
+            "claude" => Ok(BottomWidgetType::Claude),
+            "claude_graph" => Ok(BottomWidgetType::ClaudeGraph),
             "empty" => Ok(BottomWidgetType::Empty),
             #[cfg(feature = "battery")]
             "battery" | "batt" => Ok(BottomWidgetType::Battery),
@@ -1021,6 +1030,10 @@ Supported widget names:
 |          disk_io_graph         |
 +--------------------------------+
 |              power             |
++--------------------------------+
+|             claude             |
++--------------------------------+
+|          claude_graph          |
 +--------------------------------+
 |          batt, battery         |
 +--------------------------------+
@@ -1054,6 +1067,10 @@ Supported widget names:
 +--------------------------------+
 |              power             |
 +--------------------------------+
+|             claude             |
++--------------------------------+
+|          claude_graph          |
++--------------------------------+
 |              empty             |
 +--------------------------------+
                 ",
@@ -1078,15 +1095,16 @@ pub struct UsedWidgets {
     pub use_disk_io_graph: bool,
     pub use_battery: bool,
     pub use_power: bool,
+    pub use_claude: bool,
 }
 
 #[cfg(test)]
-mod power_widget_tests {
+mod added_widget_tests {
+    //! Three of the sites a new widget has to be registered at are matches that end in a
+    //! catch-all, so forgetting one compiles clean and fails silently at runtime. These
+    //! assertions are what turn that into a test failure.
     use super::BottomWidgetType;
 
-    /// Three of the sites a new graph widget has to be registered at are matches that end
-    /// in a catch-all, so forgetting one compiles clean and fails silently at runtime.
-    /// These assertions are what turns that into a test failure.
     #[test]
     fn power_is_registered_everywhere_a_catch_all_would_hide() {
         let power: BottomWidgetType = "power".parse().expect("`power` must parse as a widget");
@@ -1109,6 +1127,48 @@ mod power_widget_tests {
     /// There are two such tables, picked by `cfg(feature = "battery")`, so only one is
     /// compiled into any given build -- this checks whichever one is active, and CI builds
     /// both feature configurations.
+    /// Same three catch-all sites, for both Claude widgets.
+    #[test]
+    fn claude_widgets_are_registered_everywhere_a_catch_all_would_hide() {
+        let table: BottomWidgetType = "claude".parse().expect("`claude` must parse");
+        let graph: BottomWidgetType = "claude_graph".parse().expect("`claude_graph` must parse");
+
+        assert_eq!(table, BottomWidgetType::Claude);
+        assert_eq!(graph, BottomWidgetType::ClaudeGraph);
+
+        assert!(
+            !table.is_widget_graph(),
+            "the sessions table is a table, not a graph -- it must not get timeseries state"
+        );
+        assert!(
+            graph.is_widget_graph(),
+            "the token-rate graph must count as a graph or it gets no timeseries state"
+        );
+
+        assert_eq!(table.get_pretty_name(), "Claude");
+        assert_eq!(graph.get_pretty_name(), "Claude Tokens");
+    }
+
+    #[test]
+    fn claude_widgets_are_listed_in_the_help_table() {
+        let err = "definitely_not_a_widget"
+            .parse::<BottomWidgetType>()
+            .expect_err("an unknown widget name must be an error")
+            .to_string();
+
+        assert_eq!(
+            err.matches("claude_graph").count(),
+            1,
+            "the widget-name table must list `claude_graph`. Error was:\n{err}"
+        );
+        // `claude` also appears inside `claude_graph`, hence two.
+        assert_eq!(
+            err.matches("claude").count(),
+            2,
+            "the widget-name table must list `claude`. Error was:\n{err}"
+        );
+    }
+
     #[test]
     fn power_is_listed_in_the_help_table() {
         let err = "definitely_not_a_widget"

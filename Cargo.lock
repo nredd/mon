@@ -141,6 +141,7 @@ dependencies = [
  "clap_complete_fig",
  "clap_complete_nushell",
  "clap_mangen",
+ "claude-metrics",
  "concat-string",
  "core-foundation",
  "crossterm",

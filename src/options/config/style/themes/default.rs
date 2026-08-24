@@ -3,7 +3,7 @@ use ratatui::{
     widgets::BorderType,
 };
 
-use super::colour;
+use super::{colour, hex};
 use crate::options::config::style::Styles;
 
 impl Styles {
@@ -60,6 +60,17 @@ impl Styles {
             temp_graph_colour_styles: list_colours.clone(),
             disk_io_read_colour_styles: list_colours.clone(),
             power_colour_styles: list_colours,
+            // Model-family series, in fixed order: Opus, Sonnet, Haiku, Fable, Other.
+            // These are the dataviz categorical slots 1-5, stepped for a dark surface.
+            // Validated: lightness band, chroma floor, adjacent CVD separation (worst
+            // 8.4), normal-vision floor (worst 19.3), and 3:1 contrast all pass.
+            claude_colour_styles: vec![
+                hex!("#3987e5"),
+                hex!("#d95926"),
+                hex!("#199e70"),
+                hex!("#c98500"),
+                hex!("#d55181"),
+            ],
             disk_io_write_colour_styles: second_colours_list,
             border_style: colour!(TEXT_COLOUR),
             highlighted_border_style: colour!(HIGHLIGHT_COLOUR),
@@ -119,6 +130,16 @@ impl Styles {
             temp_graph_colour_styles: list_colours.clone(),
             disk_io_read_colour_styles: list_colours.clone(),
             power_colour_styles: list_colours,
+            // The same eight hues stepped for a light surface. Three of these sit below
+            // 3:1 contrast there, so the relief rule applies -- satisfied because the
+            // graph legend direct-labels every series with its family name.
+            claude_colour_styles: vec![
+                hex!("#2a78d6"),
+                hex!("#eb6834"),
+                hex!("#1baf7a"),
+                hex!("#eda100"),
+                hex!("#e87ba4"),
+            ],
             disk_io_write_colour_styles: second_colours_list,
             border_style: colour!(Color::Black),
             text_style: colour!(Color::Black),

@@ -1,3 +1,4 @@
+pub mod claude;
 pub mod cpu;
 pub mod disk;
 pub mod disk_io_graph;
@@ -12,6 +13,7 @@ pub mod style;
 pub mod temperature;
 pub mod temperature_graph;
 
+use claude::ClaudeConfig;
 use disk::DiskConfig;
 use disk_io_graph::DiskIoGraphConfig;
 use flags::GeneralConfig;
@@ -38,6 +40,7 @@ pub struct Config {
     pub(crate) disk: Option<DiskConfig>,
     pub(crate) disk_io_graph: Option<DiskIoGraphConfig>,
     pub(crate) power: Option<PowerConfig>,
+    pub(crate) claude: Option<ClaudeConfig>,
     pub(crate) temperature: Option<TempConfig>,
     pub(crate) temperature_graph: Option<TempGraphConfig>,
     #[serde(alias = "network")]

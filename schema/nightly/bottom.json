@@ -5,6 +5,16 @@
   "description": "https://bottom.pages.dev/nightly/configuration/config-file/",
   "type": "object",
   "properties": {
+    "claude": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ClaudeConfig"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "cpu": {
       "anyOf": [
         {
@@ -162,6 +172,42 @@
               "type": "null"
             }
           ]
+        }
+      }
+    },
+    "ClaudeConfig": {
+      "description": "Claude widget configuration.\n\nCovers both the sessions table (`claude`) and the token-rate graph (`claude_graph`).",
+      "type": "object",
+      "properties": {
+        "legend_position": {
+          "description": "Where to position the graph legend within the widget.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "use_log": {
+          "description": "Whether the token-rate graph uses a logarithmic y-axis. Defaults to true.\n\nOn by default because the series genuinely span orders of magnitude: cache reads run\ninto the millions of tokens per second while fresh input tokens are single digits,\nand on a linear axis everything but the largest series sits flat on the floor.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      }
+    },
+    "ClaudeStyle": {
+      "description": "Styling specific to the Claude token-rate graph widget.",
+      "type": "object",
+      "properties": {
+        "colours": {
+          "description": "Colour of each model family's graph line. Read in family order: Opus, Sonnet, Haiku,\nFable, then Other.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/ColourStr"
+          }
         }
       }
     },
@@ -1349,6 +1395,17 @@
           "anyOf": [
             {
               "$ref": "#/$defs/BatteryStyle"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "claude": {
+          "description": "Styling for the Claude token-rate graph widget.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ClaudeStyle"
             },
             {
               "type": "null"

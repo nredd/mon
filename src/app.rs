@@ -87,6 +87,7 @@ pub struct AppConfigFields {
     pub temperature_legend_position: Option<LegendPosition>,
     pub disk_io_legend_position: Option<LegendPosition>,
     pub power_legend_position: Option<LegendPosition>,
+    pub claude_legend_position: Option<LegendPosition>,
     pub disk_show_unmounted: bool,
     pub disk_io_graph_show_unmounted: bool,
 }
@@ -182,6 +183,12 @@ impl App {
                 disk.set_table_data(data_source);
             }
         }
+
+        for claude in self.states.claude_state.widget_states.values_mut() {
+            if claude.force_update_data {
+                claude.set_table_data(&data_source.claude_sessions);
+            }
+        }
     }
 
     pub fn reset(&mut self) {
@@ -225,6 +232,10 @@ impl App {
         // silently skipped rather than failing to compile. Upstream's `disk_io_graph_state`
         // is missing for that reason -- left alone to keep this diff to the power widget.
         for widget_state in self.states.power_graph_state.widget_states.values_mut() {
+            widget_state.graph.state_mut().reset_zoom();
+        }
+
+        for widget_state in self.states.claude_graph_state.widget_states.values_mut() {
             widget_state.graph.state_mut().reset_zoom();
         }
     }
@@ -2037,6 +2048,14 @@ impl App {
                 if let Some(widget_state) = self
                     .states
                     .power_graph_state
+                    .get_mut_widget_state(self.current_widget.widget_id) =>
+            {
+                Some(widget_state.graph.state_mut())
+            }
+            BottomWidgetType::ClaudeGraph
+                if let Some(widget_state) = self
+                    .states
+                    .claude_graph_state
                     .get_mut_widget_state(self.current_widget.widget_id) =>
             {
                 Some(widget_state.graph.state_mut())
