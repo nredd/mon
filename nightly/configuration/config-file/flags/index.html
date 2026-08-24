@@ -1667,6 +1667,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#pixel-graphs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pixel graphs
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2204,6 +2215,11 @@ each time:</p>
 <td>Which glyph family to plot graphs with. Defaults to <code>braille</code>.</td>
 </tr>
 <tr>
+<td><code>pixel_graphs</code></td>
+<td>String (one of ["off", "auto", "kitty"])</td>
+<td>Draw graphs as real pixels rather than cell markers. Defaults to <code>off</code>.</td>
+</tr>
+<tr>
 <td><code>cpu_left_legend</code></td>
 <td>Boolean</td>
 <td>Deprecated - use <code>cpu.left_legend</code>. Puts the CPU chart legend to the left side.</td>
@@ -2473,6 +2489,48 @@ Computing blocks that <code>octant</code> and <code>sextant</code> use are newer
 they render as tofu, drop to <code>quadrant</code> or <code>half_block</code>.</p>
 <p>Both spellings of the two-word names work, so <code>--marker half-block</code> and
 <code>marker = "half_block"</code> are the same thing.</p>
+<h2 id="pixel-graphs"><a class="toclink" href="#pixel-graphs">Pixel graphs</a></h2>
+<p>Cell markers cap out at 2x4 subpixels per cell. A terminal that speaks the Kitty graphics
+protocol can draw real pixels instead, which is worth roughly an order of magnitude more
+vertical resolution on a short graph.</p>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Behaviour</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>off</code></td>
+<td>Cell markers. The default</td>
+</tr>
+<tr>
+<td><code>auto</code></td>
+<td>Query the terminal, and use pixels only if it answers</td>
+</tr>
+<tr>
+<td><code>kitty</code></td>
+<td>Force the Kitty graphics protocol, skipping the query</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition warning">
+<p class="admonition-title"><code>auto</code> cannot detect Kitty from inside tmux</p>
+<p>Measured on Ghostty 1.3.1 + tmux 3.7c with <code>allow-passthrough on</code>: the Kitty capability
+query, wrapped in tmux's DCS passthrough, gets <strong>no reply at all</strong>. Other queries answer
+fine over the same path -- primary DA returns <code>ESC [?1;2;4c</code>, cell size returns
+<code>ESC [6;24;11t</code> -- so passthrough itself is working.</p>
+<p>The image transport is unaffected. Unicode placeholder cells reach tmux's own text
+buffer with correct row/column diacritics, which is what gives correct clipping,
+scrolling, and pane switching.</p>
+<p>So under tmux only detection is broken, and <code>kitty</code> is the setting to use.</p>
+</div>
+<p>The image covers the data region only. The border, y-axis labels, and x-axis labels are
+still drawn as text by the normal chart, so the pixel path reuses the same axis geometry
+rather than re-deriving it.</p>
+<p>If the image cannot be encoded for any reason, the cell-drawn graph underneath stays
+visible, so the failure mode is "looks like <code>off</code>" rather than a blank widget.</p>
 
 
 
@@ -2493,7 +2551,7 @@ they render as tofu, drop to <code>quadrant</code> or <code>half_block</code>.</
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="August 24, 2026 02:12:34">August 24, 2026</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="August 24, 2026 02:36:02">August 24, 2026</span>
   </span>
 
     
