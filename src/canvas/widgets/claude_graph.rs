@@ -183,30 +183,38 @@ fn adjust_tokens_linear(max_entry: f64) -> (f64, Vec<String>) {
 /// Token rates span several orders of magnitude in one session -- cache reads run into the
 /// millions per second while fresh input tokens are single digits -- so the log axis is the
 /// one that shows all of them at once.
+///
+/// The ceiling tracks the data rather than snapping to the next power-of-a-thousand decade.
+/// Snapping is what left the graph mostly empty: a window peaking at 1.2k tokens/s has a
+/// `log2` of 10.2, and rounding that up to the 1M/s decade at 20 drew the peak at barely
+/// half the plot height, with the top half of the widget permanently blank. Tracking the
+/// peak instead keeps it near the top of the plot whatever order of magnitude it lands on.
 fn adjust_tokens_log(max_entry: f64) -> (f64, Vec<String>) {
     use crate::utils::general::saturating_log2;
 
-    let log_max = saturating_log2(max_entry);
+    // 2^4 is 16 tokens/s. Without a floor, a window that only ever saw a couple of tokens
+    // would magnify that noise to full height and read as a busy session.
+    const FLOOR: f64 = 4.0;
 
-    // 2^10 ~ 1k, 2^20 ~ 1M, 2^30 ~ 1G.
-    if log_max < 10.0 {
-        (10.0, vec!["      0/s".into(), "     1k/s".into()])
-    } else if log_max < 20.0 {
-        (
-            20.0,
-            vec!["      0/s".into(), "     1k/s".into(), "     1M/s".into()],
-        )
-    } else {
-        (
-            30.0,
-            vec![
-                "      0/s".into(),
-                "     1k/s".into(),
-                "     1M/s".into(),
-                "     1G/s".into(),
-            ],
-        )
-    }
+    // Enough headroom that the peak does not sit flush against the border.
+    let ceiling = (saturating_log2(max_entry) * 1.1).max(FLOOR);
+
+    // Three, matching the linear axis. More would collide on a short graph, and ratatui
+    // spaces them evenly down the plot regardless of how tall it actually is.
+    let labels = (0..3)
+        .map(|step| {
+            if step == 0 {
+                // A log axis cannot reach zero, but the bottom of the plot is where "no
+                // tokens at all" lands, and labelling it 1/s would be a lie.
+                format!("{:>9}", "0/s")
+            } else {
+                let value = ceiling * f64::from(step) / 2.0;
+                format!("{:>9}", format_rate(value.exp2()).trim())
+            }
+        })
+        .collect();
+
+    (ceiling, labels)
 }
 
 #[cfg(test)]
@@ -230,6 +238,46 @@ mod tests {
         assert_eq!(format_rate(999.0).trim(), "999/s");
         assert_eq!(format_rate(1_234.0).trim(), "1.2k/s");
         assert_eq!(format_rate(5_000_000.0).trim(), "5.0M/s");
+    }
+
+    #[test]
+    fn the_log_ceiling_tracks_the_peak_instead_of_snapping_to_a_decade() {
+        // The empty-space bug. Snapping a 1.2k/s peak up to the 1M/s decade drew it at
+        // half the plot height and left the top half of the widget permanently blank.
+        let (ceiling, _) = adjust_tokens_log(1_200.0);
+
+        let peak = crate::utils::general::saturating_log2(1_200.0);
+
+        assert!(
+            peak / ceiling > 0.85,
+            "a peak should land near the top of the plot, got {:.0}% of the height",
+            (peak / ceiling) * 100.0
+        );
+    }
+
+    #[test]
+    fn a_quiet_window_does_not_magnify_noise_to_full_height() {
+        // Without a floor, two stray tokens would draw the same shape as a busy session.
+        let (ceiling, _) = adjust_tokens_log(2.0);
+
+        assert!(
+            ceiling >= 4.0,
+            "a near-idle window must keep a fixed floor, got {ceiling}"
+        );
+    }
+
+    #[test]
+    fn log_labels_are_ascending_and_stably_sized() {
+        // The first label is the bottom of the axis, and a legend that resizes between
+        // frames is worse than one that wastes a column.
+        let (_, labels) = adjust_tokens_log(5_000_000.0);
+
+        assert_eq!(labels.len(), 3);
+        assert_eq!(labels[0].trim(), "0/s");
+        assert!(
+            labels.iter().all(|label| label.len() == 9),
+            "labels must all render at the same width: {labels:?}"
+        );
     }
 
     #[test]
