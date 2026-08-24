@@ -15,7 +15,7 @@ use ratatui::style::Color;
 
 use crate::canvas::{
     components::time_series::{
-        pixel::{ImageCache, PixelRenderer, Series, colour_to_rgb, rasterize, rgb_to_rgba},
+        pixel::{ImageCache, PixelRenderer, Series, colour_to_rgb, rasterize_smooth},
         *,
     },
     drawing_utils::widget_block,
@@ -337,16 +337,15 @@ impl PixelDraw<'_> {
         let display_time = (-graph.x_min) as u64;
 
         let renderer = self.renderer;
-        let (rgba, size) = self.cache.get_or_update(
+        self.cache.get_or_update(
             last_time,
             display_time,
             area,
             self.style_epoch,
             pixels,
             |rgba, w, h| {
-                let mut rgb = vec![0u8; (w as usize) * (h as usize) * 3];
-                rasterize(
-                    &mut rgb,
+                rasterize_smooth(
+                    rgba,
                     w,
                     h,
                     (graph.x_min, 0.0),
@@ -354,11 +353,10 @@ impl PixelDraw<'_> {
                     background,
                     &series,
                 );
-                rgb_to_rgba(&rgb, rgba, background);
             },
         );
 
-        renderer.draw(f, area, rgba, size)
+        renderer.draw(f, area, self.cache)
     }
 }
 

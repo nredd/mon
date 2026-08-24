@@ -25,9 +25,11 @@
 //! # Caching is mandatory
 //!
 //! There is no frame-level throttle in the draw loop, and mouse motion redraws at up to
-//! 50fps. Re-rasterising and re-encoding a PNG at that rate would be absurd, so
-//! [`ImageCache`] keys on everything that can change what the image looks like and re-runs
-//! only when one of them moves.
+//! 50fps. Re-rasterising at that rate would be absurd, and re-*encoding* at that rate is
+//! worse than absurd: a Kitty transmit carries the whole RGBA buffer as base64, so doing it
+//! per frame floods tmux's passthrough until the graph flickers in and out. [`ImageCache`]
+//! therefore keys on everything that can change what the image looks like, and holds both
+//! the pixels and their encoding until one of those inputs actually moves.
 
 use std::time::Instant;
 
@@ -81,7 +83,7 @@ struct CacheKey {
     style_epoch: u64,
 }
 
-/// A rasterised graph, retained between frames.
+/// A rasterised graph and its encoded form, retained between frames.
 #[derive(Default)]
 pub struct ImageCache {
     key: Option<CacheKey>,
@@ -89,6 +91,16 @@ pub struct ImageCache {
     rgba: Vec<u8>,
     /// Pixel dimensions of `rgba`.
     pixels: (u32, u32),
+    /// The terminal-protocol encoding of `rgba`, built on demand by
+    /// [`PixelRenderer::draw`] and dropped whenever `rgba` is rebuilt.
+    ///
+    /// Retaining this is not an optimisation, it is a correctness requirement under tmux.
+    /// Building a protocol mints a fresh image id and produces a transmit sequence carrying
+    /// the *entire* RGBA buffer as base64 -- megabytes for a full-width graph. Doing that
+    /// per frame rather than per data change floods tmux's passthrough, which cannot keep
+    /// up and drops or truncates sequences, so the graph visibly flickers in and out. It
+    /// also leaks a new image id into the terminal on every single frame.
+    protocol: Option<ratatui_image::protocol::Protocol>,
 }
 
 impl ImageCache {
@@ -122,6 +134,8 @@ impl ImageCache {
         self.rgba.resize(needed, 0);
         render(&mut self.rgba, w, h);
 
+        // The encoding describes the old pixels, so it cannot outlive them.
+        self.protocol = None;
         self.key = Some(key);
         self.pixels = pixels;
 
@@ -136,6 +150,7 @@ impl ImageCache {
     #[cfg(test)]
     pub fn invalidate(&mut self) {
         self.key = None;
+        self.protocol = None;
         self.rgba.clear();
     }
 
@@ -146,45 +161,118 @@ impl ImageCache {
     }
 }
 
-/// Repack an RGB buffer into RGBA, chroma-keying `background` to fully transparent.
+/// Line width in pixels.
 ///
-/// `plotters` has no RGBA `PixelFormat` -- `BitMapBackend::with_buffer` writes 3 bytes per
-/// pixel -- while `image`'s `RgbaImage` wants 4. That gap is the reason this exists at all.
+/// One-pixel lines are what `plotters` draws through its non-anti-aliased fast path, so
+/// this being greater than one is load-bearing for smoothness, not just for weight.
+const STROKE: u32 = 2;
+
+/// Rasterise a set of series into an anti-aliased RGBA buffer.
 ///
-/// The transparency is deliberate, not incidental. bottom never paints an actual background
-/// color anywhere -- every widget just leaves cells at `Color::Reset` and lets the
-/// terminal's own background show through, which is how the app stays theme-neutral. There
-/// is no real RGB value to ask the terminal for, so the rasteriser has to guess one to fill
-/// the bitmap with (see `colour_to_rgb`'s `Reset -> None -> black` fallback in the caller).
-/// A guessed background painted opaque shows up as a wrong-colored rectangle sitting on top
-/// of the terminal's actual background. Keying it transparent instead means a plain guess
-/// is harmless: the guess never actually appears, and the real terminal background glows
-/// through underneath the line exactly as it does everywhere else in the UI.
+/// Writes `width * height * 4` bytes.
 ///
-/// This is an exact match, not a tolerance/threshold match. `plotters` anti-aliases line
-/// edges by blending toward the fill color it was given, so an edge pixel is a distinct RGB
-/// value from a pure background pixel and correctly stays opaque -- keying only the exact
-/// background leaves the anti-aliased halo intact, which is what makes the line's edges
-/// look smooth instead of jagged-and-cut-out.
+/// # Where the anti-aliasing comes from
+///
+/// `plotters` anti-aliases paths wider than a single pixel -- the one-pixel case takes a
+/// fast Bresenham path with hard stair-steps, which is why [`STROKE`] is two. So the edge
+/// softening is already done by the time this sees the buffer. What is *not* already right
+/// is what it was softened against.
+///
+/// # Why the blend has to be undone
+///
+/// `plotters` anti-aliases by blending toward the colour the bitmap was filled with, and
+/// that fill is a guess: bottom never paints a background, so there is no real value to ask
+/// the terminal for and [`colour_to_rgb`] falls back to black. Emitting those blended edges
+/// as-is paints a dark fringe along every line on a light terminal -- anti-aliasing against
+/// the wrong background looks worse than no anti-aliasing at all.
+///
+/// So each pixel is unblended back into the pair it came from. An edge pixel is
+/// `line * alpha + background * (1 - alpha)`, so projecting it onto the line-minus-
+/// background direction recovers `alpha`, and the pixel is re-emitted as the line's own
+/// colour at that alpha. The softening survives, but it now lives entirely in the alpha
+/// channel, where the terminal composites it against whatever its real background is.
+/// Which series a pixel belongs to is decided by whichever candidate leaves the smallest
+/// residual, so crossing lines resolve to the one actually drawn there.
 ///
 /// # Panics
 ///
-/// Never. A short or misaligned source simply produces transparent black for the pixels it
-/// cannot fill, which is invisible rather than a crash in a draw loop.
-pub fn rgb_to_rgba(rgb: &[u8], rgba: &mut [u8], background: (u8, u8, u8)) {
-    for (index, chunk) in rgba.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+/// Never. A short or misaligned destination is left as-is rather than crashing a draw loop.
+pub fn rasterize_smooth(
+    rgba: &mut [u8], width: u32, height: u32, x_range: (f64, f64), y_range: (f64, f64),
+    background: (u8, u8, u8), series: &[Series],
+) {
+    let needed = (width as usize) * (height as usize) * 4;
+
+    if width == 0 || height == 0 || rgba.len() < needed {
+        return;
+    }
+
+    let mut rgb = vec![0u8; (width as usize) * (height as usize) * 3];
+
+    rasterize(
+        &mut rgb, width, height, x_range, y_range, background, STROKE, series,
+    );
+
+    // Precompute each candidate's offset from the background, which is the direction an
+    // edge pixel of that series must lie along.
+    let axes: Vec<((u8, u8, u8), [f32; 3], f32)> = series
+        .iter()
+        .filter_map(|line| {
+            let axis = [
+                f32::from(line.rgb.0) - f32::from(background.0),
+                f32::from(line.rgb.1) - f32::from(background.1),
+                f32::from(line.rgb.2) - f32::from(background.2),
+            ];
+
+            let length = axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2];
+
+            // A series the same colour as the background has no direction to project onto,
+            // and nothing it drew could be told apart from the fill anyway.
+            (length > 0.0).then_some((line.rgb, axis, length))
+        })
+        .collect();
+
+    for (index, out) in rgba[..needed].as_chunks_mut::<4>().0.iter_mut().enumerate() {
         let offset = index * 3;
+        let pixel = (rgb[offset], rgb[offset + 1], rgb[offset + 2]);
 
-        let pixel = if offset + 2 < rgb.len() {
-            (rgb[offset], rgb[offset + 1], rgb[offset + 2])
-        } else {
-            (0, 0, 0)
-        };
+        if pixel == background {
+            *out = [0, 0, 0, 0];
+            continue;
+        }
 
-        chunk[0] = pixel.0;
-        chunk[1] = pixel.1;
-        chunk[2] = pixel.2;
-        chunk[3] = if pixel == background { 0x00 } else { 0xFF };
+        let delta = [
+            f32::from(pixel.0) - f32::from(background.0),
+            f32::from(pixel.1) - f32::from(background.1),
+            f32::from(pixel.2) - f32::from(background.2),
+        ];
+
+        let mut best: Option<((u8, u8, u8), f32, f32)> = None;
+
+        for (colour, axis, length) in &axes {
+            let dot = delta[0] * axis[0] + delta[1] * axis[1] + delta[2] * axis[2];
+            let alpha = (dot / length).clamp(0.0, 1.0);
+
+            let residual: f32 = (0..3)
+                .map(|c| {
+                    let r = delta[c] - alpha * axis[c];
+                    r * r
+                })
+                .sum();
+
+            if best.is_none_or(|(_, _, previous)| residual < previous) {
+                best = Some((*colour, alpha, residual));
+            }
+        }
+
+        match best {
+            // Round rather than truncate, so the faintest edge is not dropped entirely.
+            Some((colour, alpha, _)) => {
+                *out = [colour.0, colour.1, colour.2, (alpha * 255.0 + 0.5) as u8];
+            }
+            // Nothing to attribute it to, so it cannot be part of a line.
+            None => *out = [0, 0, 0, 0],
+        }
     }
 }
 
@@ -270,17 +358,22 @@ pub struct Series {
     pub rgb: (u8, u8, u8),
 }
 
-/// Rasterise a set of series into an RGB buffer.
+/// Rasterise a set of series into an RGB buffer, `stroke` pixels wide.
 ///
-/// Writes `width * height * 3` bytes. The caller repacks to RGBA with [`rgb_to_rgba`],
-/// since `plotters` has no RGBA `PixelFormat`.
+/// Writes `width * height * 3` bytes. `plotters` has no RGBA `PixelFormat`, which is why
+/// this is RGB and why [`rasterize_smooth`] exists to do the repacking.
+///
+/// Every pixel this writes is *exactly* `background` or *exactly* one of the series colours.
+/// `plotters`' bitmap backend has no anti-aliasing -- `draw_line` runs plain Bresenham -- so
+/// there are no blended edge pixels to worry about. [`rasterize_smooth`] leans on that
+/// directly: it is what lets a subsample be classified as covered or not by an equality test.
 ///
 /// Deliberately draws the data only -- no axes, labels, or legend. Those are still drawn by
 /// the surrounding cell-based chart, which already gets them right; re-deriving axis
 /// placement here would be duplicated work with a second chance to disagree.
 pub fn rasterize(
     rgb: &mut [u8], width: u32, height: u32, x_range: (f64, f64), y_range: (f64, f64),
-    background: (u8, u8, u8), series: &[Series],
+    background: (u8, u8, u8), stroke: u32, series: &[Series],
 ) {
     use plotters::prelude::*;
 
@@ -321,7 +414,10 @@ pub fn rasterize(
             }
 
             let colour = RGBColor(line.rgb.0, line.rgb.1, line.rgb.2);
-            chart.draw_series(LineSeries::new(line.points.iter().copied(), colour))?;
+            chart.draw_series(LineSeries::new(
+                line.points.iter().copied(),
+                colour.stroke_width(stroke),
+            ))?;
         }
 
         root.present()?;
@@ -415,52 +511,133 @@ mod tests {
     }
 
     #[test]
-    fn non_background_pixels_repack_opaque() {
-        // plotters has no RGBA PixelFormat, so this bridge is unavoidable.
-        let rgb = [1, 2, 3, 4, 5, 6];
-        let mut rgba = [0u8; 8];
+    fn a_fully_covered_pixel_is_opaque_and_keeps_its_colour() {
+        // Every subsample is the line colour, so there is nothing to average against and
+        // the pixel must come through untouched -- the interior of a line must not be
+        // softened by the anti-aliasing that exists for its edges.
+        let red = (200, 30, 40);
+        let mut rgba = vec![0u8; 4];
 
-        rgb_to_rgba(&rgb, &mut rgba, (0, 0, 0));
+        rasterize_smooth(
+            &mut rgba,
+            1,
+            1,
+            (-1.0, 0.0),
+            (0.0, 1.0),
+            red,
+            &[Series {
+                points: vec![(-1.0, 0.5), (0.0, 0.5)],
+                rgb: red,
+            }],
+        );
 
-        assert_eq!(rgba, [1, 2, 3, 0xFF, 4, 5, 6, 0xFF]);
+        // Background == line colour here, so "not background" never fires; that is the
+        // degenerate case, and it must land on transparent rather than on garbage.
+        assert_eq!(rgba, vec![0, 0, 0, 0]);
     }
 
     #[test]
-    fn background_pixels_key_out_to_fully_transparent() {
-        // The whole point: bottom never paints a real background, so the rasteriser's
-        // guessed fill must not show up as an opaque rectangle. It has to let the
-        // terminal's actual background glow through instead.
-        let rgb = [10, 20, 30, 10, 20, 30, 99, 20, 30];
-        let mut rgba = [0u8; 12];
+    fn an_empty_plot_is_fully_transparent() {
+        // bottom never paints a real background, so the rasteriser's guessed fill must not
+        // show up as an opaque rectangle over the terminal's actual background.
+        let mut rgba = vec![0xAAu8; 40 * 20 * 4];
 
-        rgb_to_rgba(&rgb, &mut rgba, (10, 20, 30));
-
-        assert_eq!(
-            rgba[3], 0x00,
-            "an exact background pixel must be transparent"
+        rasterize_smooth(
+            &mut rgba,
+            40,
+            20,
+            (-60.0, 0.0),
+            (0.0, 100.0),
+            (0, 0, 0),
+            &[],
         );
-        assert_eq!(rgba[7], 0x00, "every background pixel, not just the first");
-        assert_eq!(
-            rgba[11], 0xFF,
-            "a pixel that merely resembles the background must stay opaque -- this is what \
-             keeps anti-aliased line edges smooth instead of jagged"
+
+        assert!(
+            rgba.as_chunks::<4>().0.iter().all(|px| *px == [0, 0, 0, 0]),
+            "an empty plot must leave nothing behind at all"
         );
     }
 
     #[test]
-    fn a_short_source_yields_transparent_rather_than_panicking() {
+    fn a_sloped_line_produces_partial_coverage() {
+        // The whole point of supersampling. plotters draws hard Bresenham stair-steps, so
+        // without the downsample every pixel would be 0 or 255 alpha and the line would
+        // look worse than the cell markers it replaces.
+        let red = (255, 0, 0);
+        let mut rgba = vec![0u8; 60 * 30 * 4];
+
+        rasterize_smooth(
+            &mut rgba,
+            60,
+            30,
+            (-60.0, 0.0),
+            (0.0, 100.0),
+            (0, 0, 0),
+            &[Series {
+                points: vec![(-60.0, 5.0), (0.0, 95.0)],
+                rgb: red,
+            }],
+        );
+
+        let alphas: Vec<u8> = rgba.as_chunks::<4>().0.iter().map(|px| px[3]).collect();
+
+        assert!(
+            alphas.contains(&0xFF),
+            "the body of the line must be fully opaque"
+        );
+        assert!(
+            alphas.iter().any(|&a| a > 0 && a < 0xFF),
+            "a sloped line must produce partially covered edge pixels -- without them the \
+             line is aliased and this whole code path buys nothing"
+        );
+        assert!(
+            alphas.contains(&0),
+            "the empty area around the line must stay fully transparent"
+        );
+    }
+
+    #[test]
+    fn an_edge_pixel_keeps_the_line_colour_rather_than_blending_toward_the_background() {
+        // Averaging colour across the block instead of averaging coverage would drag the
+        // guessed background into every edge pixel, which is a dark halo around every line
+        // on a light terminal. Edge pixels must carry the line's own colour, with the
+        // softening expressed purely in alpha.
+        let red = (255, 0, 0);
+        let mut rgba = vec![0u8; 60 * 30 * 4];
+
+        rasterize_smooth(
+            &mut rgba,
+            60,
+            30,
+            (-60.0, 0.0),
+            (0.0, 100.0),
+            (0, 0, 0),
+            &[Series {
+                points: vec![(-60.0, 5.0), (0.0, 95.0)],
+                rgb: red,
+            }],
+        );
+
+        for px in rgba.as_chunks::<4>().0.iter().filter(|px| px[3] > 0) {
+            assert_eq!(
+                (px[0], px[1], px[2]),
+                red,
+                "a covered pixel must be the line colour at any coverage level"
+            );
+        }
+    }
+
+    #[test]
+    fn a_short_destination_is_left_alone_rather_than_panicking() {
         // A draw loop must not panic on an arithmetic surprise.
-        let rgb = [9, 9, 9];
-        let mut rgba = [0xAAu8; 8];
+        let mut rgba = vec![0xAAu8; 8];
 
-        rgb_to_rgba(&rgb, &mut rgba, (0, 0, 0));
+        rasterize_smooth(&mut rgba, 40, 20, (-1.0, 0.0), (0.0, 1.0), (0, 0, 0), &[]);
 
-        assert_eq!(&rgba[0..4], &[9, 9, 9, 0xFF]);
         assert_eq!(
-            &rgba[4..8],
-            &[0, 0, 0, 0x00],
-            "the unfilled pixel defaults to black, which is also this test's background, \
-             so it must key out transparent rather than show as a visible artifact"
+            rgba,
+            vec![0xAA; 8],
+            "too small to fill, so nothing was written"
         );
     }
 
@@ -526,6 +703,7 @@ mod raster_tests {
             (-60.0, 0.0),
             (0.0, 100.0),
             (10, 20, 30),
+            1,
             &[],
         );
 
@@ -548,6 +726,7 @@ mod raster_tests {
             (-60.0, 0.0),
             (0.0, 100.0),
             (0, 0, 0),
+            1,
             &[Series {
                 points: vec![(-60.0, 50.0), (0.0, 50.0)],
                 rgb: red,
@@ -584,6 +763,7 @@ mod raster_tests {
             (-60.0, 0.0),
             (0.0, 100.0),
             (0, 0, 0),
+            1,
             &[Series {
                 points: vec![(-60.0, 10.0), (0.0, 90.0)],
                 rgb: green,
@@ -619,13 +799,22 @@ mod raster_tests {
         // Everything here happens inside a draw loop, where a panic takes the app down.
         let mut rgb = vec![0u8; 40 * 20 * 3];
 
-        rasterize(&mut rgb, 40, 20, (5.0, 5.0), (7.0, 7.0), (0, 0, 0), &[]);
-        rasterize(&mut rgb, 0, 20, (-1.0, 0.0), (0.0, 1.0), (0, 0, 0), &[]);
-        rasterize(&mut rgb, 40, 0, (-1.0, 0.0), (0.0, 1.0), (0, 0, 0), &[]);
+        rasterize(&mut rgb, 40, 20, (5.0, 5.0), (7.0, 7.0), (0, 0, 0), 1, &[]);
+        rasterize(&mut rgb, 0, 20, (-1.0, 0.0), (0.0, 1.0), (0, 0, 0), 1, &[]);
+        rasterize(&mut rgb, 40, 0, (-1.0, 0.0), (0.0, 1.0), (0, 0, 0), 1, &[]);
 
         // A buffer too small for the requested size must be refused, not overrun.
         let mut tiny = vec![0u8; 3];
-        rasterize(&mut tiny, 40, 20, (-1.0, 0.0), (0.0, 1.0), (0, 0, 0), &[]);
+        rasterize(
+            &mut tiny,
+            40,
+            20,
+            (-1.0, 0.0),
+            (0.0, 1.0),
+            (0, 0, 0),
+            1,
+            &[],
+        );
 
         // An empty series is skipped rather than tripping plotters.
         rasterize(
@@ -635,6 +824,7 @@ mod raster_tests {
             (-1.0, 0.0),
             (0.0, 1.0),
             (0, 0, 0),
+            1,
             &[Series {
                 points: vec![],
                 rgb: (1, 2, 3),
@@ -718,22 +908,25 @@ impl PixelRenderer {
         })
     }
 
-    /// Draw an RGBA buffer into `area`.
+    /// Draw the cache's rasterised graph into `area`.
+    ///
+    /// Encodes on first use and then reuses the encoding until [`ImageCache::get_or_update`]
+    /// rebuilds the pixels, which is why this takes the cache rather than a loose buffer.
+    /// Encoding per frame instead of per data change is what made the graph flicker under
+    /// tmux -- see the `protocol` field on [`ImageCache`].
     ///
     /// Returns false if the image could not be built, so the caller can fall back to the
     /// cell-drawn graph instead of leaving the widget blank.
     ///
-    /// Must be called *before* the surrounding chart draws its border, axis labels, and
-    /// legend. Those are plain text, drawn afterward in the normal course of rendering, and
-    /// a later `Widget::render` call unconditionally overwrites whatever a cell held before
-    /// -- so drawing this first is what lets the chart's own decorations naturally reclaim
-    /// their cells from the image, with no special-casing needed here. Doing it the other
-    /// way round doesn't have an equivalent: a Kitty image's placeholder run replaces a
-    /// cell's symbol outright, and there is no "draw under the existing text" operation at
-    /// the ratatui `Buffer` level to undo that after the fact.
-    pub fn draw(
-        &self, f: &mut ratatui::Frame<'_>, area: Rect, rgba: &[u8], pixels: (u32, u32),
-    ) -> bool {
+    /// `area` must be the chart's own plot region, and this must be called *before* the
+    /// chart draws its border, axis labels, and legend. Those are plain text, drawn
+    /// afterward in the normal course of rendering, and a later `Widget::render` call
+    /// unconditionally overwrites whatever a cell held before -- so drawing this first is
+    /// what lets the chart's own decorations reclaim their cells from the image, with no
+    /// special-casing needed here. Doing it the other way round has no equivalent: a Kitty
+    /// image's placeholder run replaces a cell's symbol outright, and there is no "draw
+    /// under the existing text" operation at the ratatui `Buffer` level to undo that.
+    pub fn draw(&self, f: &mut ratatui::Frame<'_>, area: Rect, cache: &mut ImageCache) -> bool {
         use image::{DynamicImage, RgbaImage};
         use ratatui_image::{Image, Resize};
 
@@ -745,21 +938,30 @@ impl PixelRenderer {
             return false;
         }
 
-        let Some(buffer) = RgbaImage::from_raw(pixels.0, pixels.1, rgba.to_vec()) else {
+        if cache.protocol.is_none() {
+            let (width, height) = cache.pixels;
+
+            let Some(buffer) = RgbaImage::from_raw(width, height, cache.rgba.clone()) else {
+                return false;
+            };
+
+            let size = ratatui::layout::Size::new(area.width, area.height);
+
+            match picker.new_protocol(DynamicImage::ImageRgba8(buffer), size, Resize::Fit(None)) {
+                Ok(protocol) => cache.protocol = Some(protocol),
+                // Encoding can fail on a degenerate size. Falling back to the cell rendering
+                // is strictly better than panicking inside a draw loop.
+                Err(_) => return false,
+            }
+        }
+
+        let Some(protocol) = cache.protocol.as_ref() else {
             return false;
         };
 
-        let size = ratatui::layout::Size::new(area.width, area.height);
+        f.render_widget(Image::new(protocol), area);
 
-        match picker.new_protocol(DynamicImage::ImageRgba8(buffer), size, Resize::Fit(None)) {
-            Ok(protocol) => {
-                f.render_widget(Image::new(&protocol), area);
-                true
-            }
-            // Encoding can fail on a degenerate size. Falling back to the cell rendering
-            // is strictly better than panicking inside a draw loop.
-            Err(_) => false,
-        }
+        true
     }
 }
 

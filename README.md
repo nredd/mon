@@ -82,10 +82,16 @@ than re-derived: the Kitty renderer packs an entire row's escape sequence into t
 first cell, so overlapping the y-axis by one column does not cost a column, it erases the
 whole image. If encoding fails the chart falls back to drawing its usual cell-marker line.
 
-The rasteriser's background is keyed out to fully transparent, so the terminal's real
-background glows through under the line exactly as it does everywhere else in the UI. bottom
-never paints a background of its own, so there is no true colour to ask for -- keying it out
-is what keeps the widget theme-neutral rather than stamping a guessed rectangle on screen.
+Lines are anti-aliased, and the anti-aliasing is unblended back into the alpha channel
+before the image is handed over. bottom never paints a background of its own, so the
+rasteriser has to guess one, and softening edges against a guessed background is what puts a
+dark fringe along every line on a light terminal. Carrying the softening as alpha instead
+lets the terminal composite against its own real background, which also keeps the widget
+theme-neutral rather than stamping a guessed rectangle on screen.
+
+The encoded image is cached alongside the pixels and rebuilt only when the data changes.
+Encoding per frame re-transmits the whole buffer as base64, which tmux's passthrough cannot
+keep up with -- the graph flickers in and out.
 
 Use `kitty` rather than `auto` under tmux. Measured on Ghostty 1.3.1 + tmux 3.7c: the Kitty
 capability query gets no reply through tmux's passthrough, even though the image transport
