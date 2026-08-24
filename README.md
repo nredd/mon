@@ -22,10 +22,67 @@
   </p>
 </div>
 
-> **This is a fork.** `mon` is [bottom](https://github.com/ClementTsang/bottom) plus an
-> Apple Silicon power widget, live Claude Code metrics, a configurable graph marker, and an
-> opt-in Kitty-graphics pixel rendering path. Everything below is upstream's documentation
-> and still applies -- the binary is just named `mon` instead of `btm`. See `NOTICE`.
+> **This is a fork.** `mon` is [bottom](https://github.com/ClementTsang/bottom) with four
+> additions, described below. Everything past that section is upstream's documentation and
+> still applies -- the binary is just named `mon` instead of `btm`. See `NOTICE`.
+
+## What this fork adds
+
+Nothing here changes the default layout or default behaviour. Every addition is opt-in.
+
+### Apple Silicon power widget
+
+A `power` graph widget plotting power draw in Watts, sampled from Apple Silicon's own
+counters via [macmon](https://github.com/vladkens/macmon). No `sudo`.
+
+Up to five channels: whole-system, CPU package, GPU, ANE, and DRAM. Not every chip wires up
+every rail -- on an M4, `cpu`, `ane`, and `ram` report a constant `0.0` -- so
+`hide_unreported` defaults on and drops the ones this machine never reports, rather than
+drawing flat lines that read as "idle".
+
+Cluster labels come from `SocInfo` rather than being hardcoded: they are `E`/`P` on M1-M4
+but `P`/`S` on M5+.
+
+### Claude Code metrics
+
+Two widgets reading live [Claude Code](https://claude.com/claude-code) activity off
+`~/.claude`:
+
+- `claude` -- a sortable table of live sessions: name, directory, model family, state,
+  tokens, cost, context-window occupancy, subagent count
+- `claude_graph` -- token throughput by model family over time, on a log axis by default
+
+Backed by the `claude-metrics` workspace crate, which has no dependency on bottom. Counting
+is the fiddly part and the rules are documented in that crate: dedupe on
+`requestId` + `message.id`, take `cache_creation_input_tokens` without the ephemeral buckets
+it already sums, ignore `usage.iterations[]`, and treat `output_tokens` as a running total
+across a message's per-content-block records.
+
+Cost, context, and rate limits need a small tee in your statusline -- see
+[the docs](https://github.com/nredd/mon/blob/main/docs/content/usage/widgets/claude.md).
+Without it those columns read `N/A` and everything else still works.
+
+### Configurable graph markers
+
+`--marker <braille|octant|sextant|quadrant|half_block|dot|block|bar>`.
+
+All eight were already implemented by the vendored chart renderer and simply unreachable,
+because the marker was picked from a hardcoded braille/dot pair. This resolves upstream's
+own `TODO` in `options/args.rs`. `--dot_marker` still works and still means `--marker dot`.
+
+### Kitty pixel rendering
+
+`--pixel_graphs kitty` draws graphs as real pixels rather than cell markers, worth roughly
+an order of magnitude more vertical resolution on a short graph.
+
+The image covers the data region only; the border and both sets of axis labels are still
+drawn as text, so it reuses the chart's own axis geometry. If encoding fails the cell-drawn
+graph underneath stays visible.
+
+Use `kitty` rather than `auto` under tmux. Measured on Ghostty 1.3.1 + tmux 3.7c: the Kitty
+capability query gets no reply through tmux's passthrough, even though the image transport
+itself works fine. Only detection is broken, so `auto` can never select it there.
+
 
 ## Table of contents <!-- omit in toc -->
 
