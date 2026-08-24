@@ -1606,6 +1606,24 @@
         
       
       
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Flags
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
       <a href="./" class="md-nav__link md-nav__link--active">
         
   
@@ -1622,6 +1640,36 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#graph-markers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Graph markers
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
       
     </li>
   
@@ -2148,7 +2196,12 @@ each time:</p>
 <tr>
 <td><code>dot_marker</code></td>
 <td>Boolean</td>
-<td>Uses a dot marker for graphs.</td>
+<td>Deprecated, use <code>marker</code> instead. Equivalent to <code>marker = "dot"</code>.</td>
+</tr>
+<tr>
+<td><code>marker</code></td>
+<td>String (one of ["braille", "octant", "sextant", "quadrant", "half_block", "dot", "block", "bar"])</td>
+<td>Which glyph family to plot graphs with. Defaults to <code>braille</code>.</td>
 </tr>
 <tr>
 <td><code>cpu_left_legend</code></td>
@@ -2362,6 +2415,64 @@ each time:</p>
 </tr>
 </tbody>
 </table>
+<h2 id="graph-markers"><a class="toclink" href="#graph-markers">Graph markers</a></h2>
+<p><code>marker</code> picks which glyph family graphs are plotted with, from finest to coarsest:</p>
+<table>
+<thead>
+<tr>
+<th>Marker</th>
+<th>Resolution per cell</th>
+<th>Glyphs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>braille</code></td>
+<td>2x4</td>
+<td>Braille patterns. The default</td>
+</tr>
+<tr>
+<td><code>octant</code></td>
+<td>2x4</td>
+<td>Legacy Computing octants</td>
+</tr>
+<tr>
+<td><code>sextant</code></td>
+<td>2x3</td>
+<td>Legacy Computing sextants</td>
+</tr>
+<tr>
+<td><code>quadrant</code></td>
+<td>2x2</td>
+<td>Quadrant blocks</td>
+</tr>
+<tr>
+<td><code>half_block</code></td>
+<td>1x2</td>
+<td><code>▀</code> <code>▄</code> <code>█</code></td>
+</tr>
+<tr>
+<td><code>dot</code></td>
+<td>1x1</td>
+<td><code>•</code></td>
+</tr>
+<tr>
+<td><code>block</code></td>
+<td>1x1</td>
+<td><code>█</code>, coloured on the background</td>
+</tr>
+<tr>
+<td><code>bar</code></td>
+<td>1x1</td>
+<td><code>▄</code></td>
+</tr>
+</tbody>
+</table>
+<p>Braille gives the most detail but needs a font with good braille coverage. The Legacy
+Computing blocks that <code>octant</code> and <code>sextant</code> use are newer and less widely covered still; if
+they render as tofu, drop to <code>quadrant</code> or <code>half_block</code>.</p>
+<p>Both spellings of the two-word names work, so <code>--marker half-block</code> and
+<code>marker = "half_block"</code> are the same thing.</p>
 
 
 
@@ -2382,7 +2493,7 @@ each time:</p>
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="June 22, 2026 06:25:54">June 22, 2026</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="August 24, 2026 02:12:34">August 24, 2026</span>
   </span>
 
     
