@@ -61,6 +61,7 @@
 
 pub mod model;
 pub mod session;
+pub mod statusline;
 pub mod tailer;
 pub mod transcript;
 
@@ -71,6 +72,7 @@ use std::{
 
 pub use model::ModelFamily;
 pub use session::Session;
+pub use statusline::Statusline;
 pub use tailer::Tailer;
 pub use transcript::{Record, TokenTotals, UsageAccumulator};
 
@@ -139,30 +141,28 @@ impl ClaudeMetrics {
             };
             let cwd = session.cwd.clone();
 
-            let state = self.states.entry(session_id.clone()).or_insert_with(|| {
-                let main = session::find_transcript(&self.root, &session_id, cwd.as_deref())
-                    .map_or_else(|| Tailer::new(PathBuf::new()), Tailer::new);
+            let located = self.locate_transcript(&session_id, cwd.as_deref());
 
-                SessionState {
-                    main,
+            let state = self
+                .states
+                .entry(session_id.clone())
+                .or_insert_with(|| SessionState {
+                    main: Tailer::new(PathBuf::new()),
                     subagents: Vec::new(),
                     usage: UsageAccumulator::default(),
                     located: false,
-                }
-            });
+                });
 
             // A brand-new session's transcript may not exist yet when it first registers.
             if !state.located {
-                if let Some(path) =
-                    session::find_transcript(&self.root, &session_id, cwd.as_deref())
-                {
-                    if state.main.path() != path {
-                        state.main = Tailer::new(path);
-                    }
-                    state.located = true;
-                } else {
+                let Some(path) = located else {
                     continue;
+                };
+
+                if state.main.path() != path {
+                    state.main = Tailer::new(path);
                 }
+                state.located = true;
             }
 
             let (lines, kind) = state.main.read_new();
@@ -232,6 +232,39 @@ impl ClaudeMetrics {
         let mut totals: Vec<(ModelFamily, TokenTotals)> = merged.into_iter().collect();
         totals.sort_unstable_by_key(|(family, _)| *family);
         totals
+    }
+
+    /// Find a session's transcript.
+    ///
+    /// Prefers `transcript_path` out of the cached statusline payload, which is exact.
+    /// Falls back to deriving the path from `cwd` and then to scanning, both of which rest
+    /// on a slug encoding that is inferred rather than documented.
+    fn locate_transcript(&self, session_id: &str, cwd: Option<&str>) -> Option<PathBuf> {
+        if let Some(path) = statusline::read(&self.root, Some(session_id), cwd)
+            .and_then(|s| s.transcript_path)
+            .map(PathBuf::from)
+            && path.is_file()
+        {
+            return Some(path);
+        }
+
+        session::find_transcript(&self.root, session_id, cwd)
+    }
+
+    /// The cached statusline payload for a session, if the tee has written one.
+    ///
+    /// This is the only place cost, context-window occupancy, and the 5h/7d rate limits are
+    /// available. `None` means the tee is not installed or has not run yet, which is a
+    /// normal state rather than an error.
+    #[must_use]
+    pub fn statusline_for(&self, session_id: &str) -> Option<Statusline> {
+        let cwd = self
+            .sessions
+            .iter()
+            .find(|s| s.session_id.as_deref() == Some(session_id))
+            .and_then(|s| s.cwd.as_deref());
+
+        statusline::read(&self.root, Some(session_id), cwd)
     }
 
     /// How many subagent messages one session has produced.

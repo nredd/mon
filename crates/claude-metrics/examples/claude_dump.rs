@@ -70,6 +70,20 @@ fn main() {
             );
         }
 
+        if let Some(sl) = metrics.statusline_for(id) {
+            println!(
+                "    cost ${:.4}  ctx {:.1}%  5h {:.1}%  7d {:.1}%  [{} {}]",
+                sl.cost.total_cost_usd,
+                sl.context_window.used_percentage,
+                sl.rate_limits.five_hour.used_percentage,
+                sl.rate_limits.seven_day.used_percentage,
+                sl.model_display_name().unwrap_or("?"),
+                sl.effort_level().unwrap_or("?"),
+            );
+        } else {
+            println!("    (no statusline cache -- is the tee installed?)");
+        }
+
         println!("    subagent messages: {}", metrics.subagent_messages(id));
         if let Some(ms) = metrics.last_turn_duration_ms(id) {
             // Integer division: a turn duration in whole seconds is plenty, and it keeps
