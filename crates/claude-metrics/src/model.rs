@@ -46,6 +46,19 @@ impl ModelFamily {
         }
     }
 
+    /// Every family, in a fixed order.
+    ///
+    /// Callers use this as a draw order and as a colour index. Fixed rather than sorted by
+    /// volume or by first appearance on purpose: a family that goes quiet and drops out
+    /// must not repaint the ones that remain.
+    pub const ALL: [Self; 5] = [
+        Self::Opus,
+        Self::Sonnet,
+        Self::Haiku,
+        Self::Fable,
+        Self::Other,
+    ];
+
     /// A short display label.
     #[must_use]
     pub fn label(self) -> &'static str {

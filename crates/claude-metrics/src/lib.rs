@@ -59,6 +59,7 @@
 //! }
 //! ```
 
+pub mod history;
 pub mod model;
 pub mod session;
 pub mod statusline;
@@ -70,6 +71,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+pub use history::{Bucket, TokenHistory};
 pub use model::ModelFamily;
 pub use session::Session;
 pub use statusline::Statusline;
