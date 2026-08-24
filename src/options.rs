@@ -764,6 +764,11 @@ pub(crate) fn init_app(args: BottomArgs, config: Config) -> Result<(App, BottomL
         use_temp_graph: used_widget_set.contains(&TempGraph),
         use_disk_io_graph: used_widget_set.contains(&DiskIoGraph),
         use_battery: used_widget_set.contains(&Battery),
+        // NOTE(redd): flipped on by `BottomWidgetType::Power` once the widget exists.
+        // Until then nothing spawns the sampler thread; `examples/power_dump.rs` is
+        // what exercises the collector.
+        #[cfg(target_os = "macos")]
+        use_power: false,
     };
 
     let (disk_name_filter, disk_mount_filter) = {

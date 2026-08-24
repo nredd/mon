@@ -117,6 +117,10 @@ rustix = { version = "1.1.4", features = ["fs", "param"] }
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.10.1"
 mach2 = "0.6.0"
+# `default-features = false` drops the `app` feature, leaving only core-foundation,
+# libc, serde, and serde_json. No cargo feature guards this -- `cfg(target_os)` already
+# does, and the power widget is not optional on the platform that can support it.
+macmon = { version = "0.8.2", default-features = false }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { version = "0.62.2", features = [

@@ -21,6 +21,8 @@ pub mod disks;
 pub mod error;
 pub mod memory;
 pub mod network;
+#[cfg(target_os = "macos")]
+pub mod power;
 pub mod processes;
 pub mod temperature;
 
@@ -55,6 +57,8 @@ pub struct Data {
     pub io: Option<disks::IoHarvest>,
     #[cfg(feature = "battery")]
     pub list_of_batteries: Option<Vec<batteries::BatteryData>>,
+    #[cfg(target_os = "macos")]
+    pub power: Option<power::PowerData>,
     #[cfg(feature = "zfs")]
     pub arc: Option<memory::MemData>,
     #[cfg(feature = "gpu")]
@@ -78,6 +82,8 @@ impl Default for Data {
             network: None,
             #[cfg(feature = "battery")]
             list_of_batteries: None,
+            #[cfg(target_os = "macos")]
+            power: None,
             #[cfg(feature = "zfs")]
             arc: None,
             #[cfg(feature = "gpu")]
@@ -183,6 +189,14 @@ pub struct DataCollector {
     #[cfg(feature = "battery")]
     battery_list: Option<Vec<Battery>>,
 
+    /// Spawned lazily, the first time a layout actually asks for power data.
+    #[cfg(target_os = "macos")]
+    power_sampler: Option<power::PowerSampler>,
+    /// How long each power sample blocks for. Matched to the collection rate so the
+    /// sampler produces roughly one reading per collection tick.
+    #[cfg(target_os = "macos")]
+    power_interval_ms: u32,
+
     #[cfg(unix)]
     user_table: processes::UserTable,
 
@@ -231,6 +245,10 @@ impl DataCollector {
             battery_manager: None,
             #[cfg(feature = "battery")]
             battery_list: None,
+            #[cfg(target_os = "macos")]
+            power_sampler: None,
+            #[cfg(target_os = "macos")]
+            power_interval_ms: 1000,
             filters,
             #[cfg(unix)]
             user_table: Default::default(),
@@ -290,6 +308,11 @@ impl DataCollector {
 
     pub fn set_get_process_threads(&mut self, get_process_threads: bool) {
         self.get_process_threads = get_process_threads;
+    }
+
+    #[cfg(target_os = "macos")]
+    pub fn set_power_interval(&mut self, interval_ms: u32) {
+        self.power_interval_ms = interval_ms;
     }
 
     pub fn set_include_unmounted_disks(&mut self, include_unmounted_disks: bool) {
@@ -396,6 +419,9 @@ impl DataCollector {
 
         #[cfg(feature = "battery")]
         self.update_batteries();
+
+        #[cfg(target_os = "macos")]
+        self.update_power();
 
         #[cfg(feature = "gpu")]
         self.update_gpus();
@@ -579,6 +605,29 @@ impl DataCollector {
             self.total_tx_packets = net_data.total_tx_packets;
             self.data.network = Some(net_data);
         }
+    }
+
+    /// Update Apple Silicon power information.
+    ///
+    /// Unlike upstream's `update_batteries`, this is gated on the widget actually being in
+    /// the layout. Sampling costs a whole dedicated thread, so nothing is spawned until
+    /// something asks.
+    #[inline]
+    #[cfg(target_os = "macos")]
+    fn update_power(&mut self) {
+        if !self.widgets_to_harvest.use_power {
+            return;
+        }
+
+        let sampler = self
+            .power_sampler
+            .get_or_insert_with(|| power::PowerSampler::spawn(self.power_interval_ms));
+
+        sampler.poll();
+
+        // The first few collection ticks land before the sampler's first interval closes,
+        // so `None` here is normal rather than an error.
+        self.data.power = sampler.latest().cloned();
     }
 
     /// Update battery information.

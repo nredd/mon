@@ -1067,4 +1067,6 @@ pub struct UsedWidgets {
     pub use_temp_graph: bool,
     pub use_disk_io_graph: bool,
     pub use_battery: bool,
+    #[cfg(target_os = "macos")]
+    pub use_power: bool,
 }

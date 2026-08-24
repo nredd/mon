@@ -27,6 +27,11 @@ pub(crate) mod event;
 pub mod options;
 pub mod widgets;
 
+// Re-exported so `examples/power_dump.rs` can drive the collector the same way the
+// widget does. `collection` itself stays `pub(crate)`, as upstream has it.
+#[cfg(target_os = "macos")]
+pub use collection::power;
+
 use std::{
     boxed::Box,
     io::{Stdout, Write, stderr, stdout},
@@ -240,6 +245,8 @@ fn create_collection_thread(
         #[cfg(feature = "zfs")]
         data_collector.set_free_arc_mem(get_arc_free);
         data_collector.set_include_unmounted_disks(include_unmounted_disks);
+        #[cfg(target_os = "macos")]
+        data_collector.set_power_interval(u32::try_from(update_sleep).unwrap_or(u32::MAX));
 
         data_collector.update_data();
         data_collector.data = Data::default();
