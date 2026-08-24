@@ -9,6 +9,7 @@ use timeless::data::ChunkedData;
 use super::{
     AxisBound, ChartScaling, GraphData, GraphDrawCtx, TimeGraph, TimeseriesConfig, TimeseriesState,
 };
+use crate::canvas::components::time_series::PixelDraw;
 
 struct GraphHeightCacheInner {
     best_point: (Instant, f64),
@@ -94,6 +95,9 @@ impl GraphHeightCache {
 pub struct AutoYAxisTimeGraph {
     state: TimeseriesState,
     height_cache: GraphHeightCache,
+    /// Rasterised graph, retained between frames. Modelled on `GraphHeightCache` above --
+    /// same reason, the draw loop has no frame-level throttle.
+    image_cache: crate::canvas::components::time_series::pixel::ImageCache,
 }
 
 impl AutoYAxisTimeGraph {
@@ -101,6 +105,7 @@ impl AutoYAxisTimeGraph {
         AutoYAxisTimeGraph {
             state: TimeseriesState::new(config, autohide_timer),
             height_cache: GraphHeightCache::default(),
+            image_cache: Default::default(),
         }
     }
 
@@ -126,9 +131,17 @@ impl AutoYAxisTimeGraph {
     }
 
     pub(crate) fn draw<F: Copy + Default + Into<f64>>(
-        &self, f: &mut Frame<'_>, draw_loc: Rect, ctx: GraphDrawCtx<'_>, y_bounds: AxisBound,
+        &mut self, f: &mut Frame<'_>, draw_loc: Rect, ctx: GraphDrawCtx<'_>, y_bounds: AxisBound,
         y_labels: &[Cow<'_, str>], scaling: ChartScaling, data: Vec<GraphData<'_, F>>,
     ) {
+        let last_time = ctx.last_time;
+        let pixels = ctx.pixel_renderer.map(|renderer| PixelDraw {
+            renderer,
+            cache: &mut self.image_cache,
+            last_time,
+            style_epoch: ctx.style_epoch,
+        });
+
         TimeGraph {
             x_min: -(self.state.current_display_time() as f64),
             hide_x_labels: ctx.hide_x_labels,
@@ -147,7 +160,7 @@ impl AutoYAxisTimeGraph {
             marker: ctx.marker,
             scaling,
         }
-        .draw(f, draw_loc, data)
+        .draw(f, draw_loc, data, pixels)
     }
 }
 

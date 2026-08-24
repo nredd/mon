@@ -5,17 +5,21 @@ use ratatui::{Frame, layout::Rect};
 use super::{
     AxisBound, ChartScaling, GraphData, GraphDrawCtx, TimeGraph, TimeseriesConfig, TimeseriesState,
 };
+use crate::canvas::components::time_series::PixelDraw;
 
 /// A time series graph that expects data to be in a percentage format,
 /// from 0% to 100%.
 pub struct PercentTimeGraph {
     state: TimeseriesState,
+    /// Rasterised graph, retained between frames.
+    image_cache: crate::canvas::components::time_series::pixel::ImageCache,
 }
 
 impl PercentTimeGraph {
     pub(crate) fn new(config: TimeseriesConfig, autohide_timer: Option<Instant>) -> Self {
         PercentTimeGraph {
             state: TimeseriesState::new(config, autohide_timer),
+            image_cache: Default::default(),
         }
     }
 
@@ -24,9 +28,17 @@ impl PercentTimeGraph {
     }
 
     pub(crate) fn draw<F: Copy + Default + Into<f64>>(
-        &self, f: &mut Frame<'_>, draw_loc: Rect, ctx: GraphDrawCtx<'_>,
+        &mut self, f: &mut Frame<'_>, draw_loc: Rect, ctx: GraphDrawCtx<'_>,
         data: Vec<GraphData<'_, F>>,
     ) {
+        let last_time = ctx.last_time;
+        let pixels = ctx.pixel_renderer.map(|renderer| PixelDraw {
+            renderer,
+            cache: &mut self.image_cache,
+            last_time,
+            style_epoch: ctx.style_epoch,
+        });
+
         const Y_BOUNDS: AxisBound = AxisBound::Max(100.5);
         const Y_LABELS: [Cow<'static, str>; 2] = [Cow::Borrowed("  0%"), Cow::Borrowed("100%")];
 
@@ -48,6 +60,6 @@ impl PercentTimeGraph {
             marker: ctx.marker,
             scaling: ChartScaling::Linear,
         }
-        .draw(f, draw_loc, data)
+        .draw(f, draw_loc, data, pixels)
     }
 }

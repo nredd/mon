@@ -11,7 +11,15 @@ use ratatui::{
 };
 use timeless::data::ChunkedData;
 
-use crate::canvas::{components::time_series::*, drawing_utils::widget_block};
+use ratatui::style::Color;
+
+use crate::canvas::{
+    components::time_series::{
+        pixel::{ImageCache, PixelRenderer, Series, colour_to_rgb, rasterize, rgb_to_rgba},
+        *,
+    },
+    drawing_utils::widget_block,
+};
 
 /// Represents the data required by the [`TimeGraph`].
 ///
@@ -154,12 +162,21 @@ impl TimeGraph<'_> {
     ///   various details like style and optional legends.
     pub fn draw<F: Copy + Default + Into<f64>>(
         &self, f: &mut Frame<'_>, draw_loc: Rect, graph_data: Vec<GraphData<'_, F>>,
+        mut pixels: Option<PixelDraw<'_>>,
     ) {
         // TODO: (points_rework_v1) can we reduce allocations in the underlying graph by
         // saving some sort of state?
 
         let x_axis = self.generate_x_axis();
         let y_axis = self.generate_y_axis();
+
+        // Rasterise *before* consuming `graph_data` into datasets. The cell-drawn chart is
+        // still rendered underneath, so a pixel path that cannot encode degrades to the
+        // normal graph rather than to nothing.
+        let pixel_area = pixels
+            .as_mut()
+            .and_then(|p| p.render(f, draw_loc, &graph_data, self));
+
         let data = graph_data.into_iter().map(create_dataset).collect();
 
         let block = {
@@ -197,11 +214,142 @@ impl TimeGraph<'_> {
                 })
                 .scaling(self.scaling),
             draw_loc,
-        )
+        );
+
+        // Painted last so it sits over the cell-drawn lines rather than under them.
+        if let Some((area, renderer, rgba, size)) = pixel_area {
+            renderer.draw(f, area, rgba, size);
+        }
     }
 }
 
 /// Creates a new [`Dataset`].
+/// Everything the pixel path needs to rasterise one graph, borrowed for the frame.
+pub(crate) struct PixelDraw<'a> {
+    /// The terminal graphics renderer. `None` disables the path.
+    pub renderer: &'a PixelRenderer,
+    /// Per-widget cache, so a still frame does not re-rasterise at redraw speed.
+    pub cache: &'a mut ImageCache,
+    /// The newest timestamp in the series, part of the cache key.
+    pub last_time: Option<Instant>,
+    /// Bumped when the theme or the set of series changes.
+    pub style_epoch: u64,
+}
+
+impl PixelDraw<'_> {
+    /// Work out the plot area, rasterise into it, and hand back what to draw where.
+    ///
+    /// Returns `None` when the pixel path is off, unusable, or the area is too small to be
+    /// worth it -- in every case the caller just leaves the cell-drawn graph alone.
+    fn render<'c, F: Copy + Default + Into<f64>>(
+        &'c mut self, _f: &mut Frame<'_>, draw_loc: Rect, graph_data: &[GraphData<'_, F>],
+        graph: &TimeGraph<'_>,
+    ) -> Option<(Rect, &'c PixelRenderer, &'c [u8], (u32, u32))> {
+        if !self.renderer.is_active() {
+            return None;
+        }
+
+        let last_time = self.last_time?;
+        let area = plot_area(draw_loc, graph)?;
+
+        let (cell_w, cell_h) = self.renderer.font_size();
+        let pixels = (
+            u32::from(area.width) * u32::from(cell_w),
+            u32::from(area.height) * u32::from(cell_h),
+        );
+
+        // Collect the series in data space. `x` is milliseconds relative to the right
+        // edge, matching how the cell renderer plots time.
+        let y_max = match graph.y_bounds {
+            AxisBound::Max(max) => max,
+            // The pixel path only handles the 0..max shape the graph widgets use.
+            AxisBound::Zero | AxisBound::Min(_) => 1.0,
+        };
+        let series = collect_series(graph_data, last_time, graph.x_min, y_max);
+
+        let background = colour_to_rgb(graph.general_widget_style.bg.unwrap_or(Color::Reset))
+            .unwrap_or((0, 0, 0));
+
+        let display_time = (-graph.x_min) as u64;
+
+        let (rgba, size) = self.cache.get_or_update(
+            last_time,
+            display_time,
+            area,
+            self.style_epoch,
+            pixels,
+            |rgba, w, h| {
+                let mut rgb = vec![0u8; (w as usize) * (h as usize) * 3];
+                rasterize(
+                    &mut rgb,
+                    w,
+                    h,
+                    (graph.x_min, 0.0),
+                    (0.0, y_max.max(f64::MIN_POSITIVE)),
+                    background,
+                    &series,
+                );
+                rgb_to_rgba(&rgb, rgba);
+            },
+        );
+
+        Some((area, self.renderer, rgba, size))
+    }
+}
+
+/// The region inside the border, past the y-labels and above the x-labels.
+///
+/// Reusing the surrounding chart's own axis geometry rather than re-deriving it means the
+/// image lands exactly on the data region, and there is only one place that decides where
+/// the axes go.
+fn plot_area(draw_loc: Rect, graph: &TimeGraph<'_>) -> Option<Rect> {
+    // Inside the border.
+    let inner = draw_loc.inner(ratatui::layout::Margin::new(1, 1));
+
+    let label_width: u16 = graph
+        .y_labels
+        .iter()
+        .map(|l| l.chars().count() as u16)
+        .max()
+        .unwrap_or(0);
+
+    let x_label_rows = u16::from(!graph.hide_x_labels);
+
+    let width = inner.width.checked_sub(label_width)?;
+    let height = inner.height.checked_sub(x_label_rows)?;
+
+    // Below this there is nothing an image buys over cell markers.
+    if width < 4 || height < 3 {
+        return None;
+    }
+
+    Some(Rect::new(inner.x + label_width, inner.y, width, height))
+}
+
+/// Flatten graph data into plain `(x, y)` series for the rasteriser.
+fn collect_series<F: Copy + Default + Into<f64>>(
+    graph_data: &[GraphData<'_, F>], last_time: Instant, x_min: f64, y_max: f64,
+) -> Vec<Series> {
+    graph_data
+        .iter()
+        .filter_map(|data| {
+            let values = data.values?;
+            let rgb = colour_to_rgb(data.style.fg.unwrap_or(Color::Reset))?;
+
+            let points: Vec<(f64, f64)> = values
+                .iter_along_base(data.time)
+                .filter_map(|(time, value)| {
+                    // Milliseconds before the right edge, so x runs negative to zero.
+                    let offset = -(last_time.duration_since(*time).as_millis() as f64);
+                    (offset >= x_min).then(|| ((offset), (*value).into().min(y_max)))
+                })
+                .collect();
+
+            Some(Series { points, rgb })
+        })
+        .collect()
+}
+
 fn create_dataset<F: Copy + Default + Into<f64>>(data: GraphData<'_, F>) -> Dataset<'_, F> {
     let GraphData {
         time,

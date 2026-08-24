@@ -317,8 +317,15 @@ pub fn start_bottom(enable_error_hook: &mut bool) -> anyhow::Result<()> {
     // Create the "app" and initialize a bunch of stuff.
     let (mut app, widget_layout, styling) = init_app(args, config)?;
 
+    // Set up terminal graphics *before* raw mode. `Picker::from_query_stdio` drives the
+    // terminal into raw mode itself to read the capability replies, and doing that twice
+    // leaves the terminal in a state neither side expects.
+    let pixel_renderer = canvas::components::time_series::pixel::PixelRenderer::new(
+        app.app_config_fields.pixel_mode,
+    );
+
     // Create painter and set colours.
-    let mut painter = canvas::Painter::init(widget_layout, styling)?;
+    let mut painter = canvas::Painter::init(widget_layout, styling, pixel_renderer)?;
 
     // Check if the current environment is in a terminal.
     check_if_terminal();

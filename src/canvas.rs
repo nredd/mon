@@ -18,7 +18,6 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use crate::options::config::flags::GraphMarker;
 use crate::{
     app::{
         App,
@@ -26,6 +25,9 @@ use crate::{
     },
     constants::*,
     options::config::style::Styles,
+};
+use crate::{
+    canvas::components::time_series::pixel::PixelRenderer, options::config::flags::GraphMarker,
 };
 
 /// Handles the canvas' state.
@@ -40,18 +42,69 @@ pub struct Painter {
 
     /// The layout.
     layout: BottomLayout,
+
+    /// Terminal graphics renderer for the pixel path.
+    pixel: PixelRenderer,
+
+    /// Bumped whenever something happens that makes every cached image stale -- a resize,
+    /// or a reattach to a different terminal process, which invalidates transmitted image
+    /// ids and would otherwise leave blank cells.
+    style_epoch: u64,
 }
 
 impl Painter {
-    pub fn init(layout: BottomLayout, styling: Styles) -> anyhow::Result<Self> {
+    pub fn init(
+        layout: BottomLayout, styling: Styles, pixel: PixelRenderer,
+    ) -> anyhow::Result<Self> {
         let painter = Painter {
             styles: styling,
             previous_height: 0,
             previous_width: 0,
             layout,
+            pixel,
+            style_epoch: 0,
         };
 
         Ok(painter)
+    }
+
+    /// The graphics renderer, if the pixel path is usable.
+    pub(crate) fn pixel_renderer(&self) -> Option<&PixelRenderer> {
+        self.pixel.is_active().then_some(&self.pixel)
+    }
+
+    /// The current image-cache epoch.
+    pub(crate) fn style_epoch(&self) -> u64 {
+        self.style_epoch
+    }
+
+    /// Invalidate every cached image.
+    pub(crate) fn invalidate_images(&mut self) {
+        self.style_epoch = self.style_epoch.wrapping_add(1);
+    }
+
+    /// Ask the terminal to drop every image it is holding.
+    ///
+    /// Smuggled through a cell symbol rather than written to stdout directly, which is the
+    /// same mechanism `ratatui-image` uses to emit graphics escapes: ratatui writes cell
+    /// symbols to the terminal verbatim, and writing to stdout mid-frame would interleave
+    /// with ratatui's own output.
+    fn delete_images(&self, f: &mut Frame<'_>) {
+        if !self.pixel.is_active() {
+            return;
+        }
+
+        // `a=d,d=A` is "delete all placements and free the image data".
+        const DELETE_ALL: &str = "\x1b_Ga=d,d=A\x1b\\";
+
+        let area = f.area();
+        if area.width == 0 || area.height == 0 {
+            return;
+        }
+
+        if let Some(cell) = f.buffer_mut().cell_mut((area.x, area.y)) {
+            cell.set_symbol(DELETE_ALL);
+        }
     }
 
     /// Determines the border style.
@@ -119,6 +172,11 @@ impl Painter {
                 app_state.is_force_redraw = true;
                 self.previous_height = terminal_height;
                 self.previous_width = terminal_width;
+
+                // A resize changes every image's cell footprint, and a reattach lands here
+                // too -- the new terminal process knows nothing about image ids the old one
+                // was sent, and reusing them leaves blank cells.
+                self.invalidate_images();
             }
 
             // TODO: We should probably remove this or make it done elsewhere, not the
@@ -137,6 +195,15 @@ impl Painter {
                 for battery_widget in app_state.states.battery_state.widget_states.values_mut() {
                     battery_widget.tab_click_locs = None;
                 }
+            }
+
+            // A dialog covers the graphs, but `set_style` below only repaints *cells*. A
+            // Kitty image lives in the terminal's graphics layer and would show straight
+            // through it, so it has to be deleted explicitly.
+            if app_state.help_dialog_state.is_showing_help
+                || app_state.process_kill_dialog.is_open()
+            {
+                self.delete_images(f);
             }
 
             // TODO: Make drawing dialog generic.

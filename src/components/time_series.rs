@@ -99,6 +99,12 @@ pub struct GraphDrawCtx<'a> {
     pub is_expanded: bool,
     pub legend_position: Option<LegendPosition>,
     pub legend_constraints: Option<LegendConstraints>,
+    /// The terminal graphics renderer, when the pixel path is enabled.
+    pub pixel_renderer: Option<&'a crate::canvas::components::time_series::pixel::PixelRenderer>,
+    /// Newest timestamp in the series; part of the image cache key.
+    pub last_time: Option<Instant>,
+    /// Bumped when the theme or the set of drawn series changes.
+    pub style_epoch: u64,
 }
 
 #[cfg(test)]

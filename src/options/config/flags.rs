@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::StringOrNum;
+use crate::canvas::components::time_series::pixel::PixelMode;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[cfg_attr(feature = "generate_schema", derive(schemars::JsonSchema))]
@@ -101,6 +102,8 @@ pub(crate) struct GeneralConfig {
     pub(crate) dot_marker: Option<bool>,
     /// Which glyph family graphs are plotted with.
     pub(crate) marker: Option<GraphMarker>,
+    /// Whether graphs are drawn as real pixels via a terminal graphics protocol.
+    pub(crate) pixel_graphs: Option<PixelMode>,
     pub(crate) rate: Option<StringOrNum>,
     pub(crate) basic: Option<bool>,
     pub(crate) default_time_value: Option<StringOrNum>,

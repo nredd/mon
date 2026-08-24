@@ -249,6 +249,24 @@ pub struct GeneralArgs {
     pub marker: Option<String>,
 
     #[arg(
+        long,
+        value_name = "MODE",
+        help = "Draw graphs as real pixels where the terminal supports it.",
+        long_help = indoc! {
+            "Draw graphs as real pixels rather than cell markers. Modes are:
+            - off    (cell markers; the default)
+            - auto   (query the terminal and use pixels only if it answers)
+            - kitty  (force the Kitty graphics protocol, skipping the query)
+
+            'auto' cannot select Kitty from inside tmux: the capability query gets no reply
+            through tmux's passthrough, even though the image transport itself works. Use
+            'kitty' there."
+        },
+        alias = "pixel-graphs"
+    )]
+    pub pixel_graphs: Option<String>,
+
+    #[arg(
         short = 'e',
         long,
         action = ArgAction::SetTrue,

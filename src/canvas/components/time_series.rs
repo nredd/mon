@@ -5,6 +5,7 @@
 //! as are variants for common use cases.
 
 mod base;
+pub mod pixel;
 mod vendored;
 
 pub(crate) use base::*;

@@ -199,6 +199,15 @@ impl Painter {
                         width: Constraint::Ratio(3, 4),
                         height: Constraint::Ratio(3, 4),
                     }),
+                    pixel_renderer: self.pixel_renderer(),
+                    last_time: app_state
+                        .data_store
+                        .get_data()
+                        .time_series_data
+                        .time
+                        .last()
+                        .copied(),
+                    style_epoch: self.style_epoch(),
                 },
                 graph_data,
             );

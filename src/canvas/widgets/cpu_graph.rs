@@ -15,7 +15,6 @@ use crate::{
     },
     collection::cpu::CpuData,
     components::time_series::GraphDrawCtx,
-    widgets::CpuWidgetState,
 };
 
 const AVG_POSITION: usize = 1;
@@ -117,11 +116,13 @@ impl Painter {
         }
     }
 
+    /// Takes the scroll position by value rather than borrowing the widget state: the
+    /// returned `GraphData` borrows from `data` for `'a`, and holding a second borrow of the
+    /// widget state would collide with the `&mut` the graph now needs to cache its image.
     fn generate_points<'a>(
-        &self, cpu_widget_state: &'a CpuWidgetState, data: &'a InnerData, show_avg_cpu: bool,
+        &self, current_scroll_position: usize, data: &'a InnerData, show_avg_cpu: bool,
     ) -> Vec<GraphData<'a>> {
         let show_avg_offset = if show_avg_cpu { AVG_POSITION } else { 0 };
-        let current_scroll_position = cpu_widget_state.table.state.current_index;
         let cpu_entries = &data.cpu_harvest;
         let cpu_points = &data.time_series_data.cpu;
         let time = &data.time_series_data.time;
@@ -183,7 +184,7 @@ impl Painter {
             );
 
             let graph_data = self.generate_points(
-                cpu_widget_state,
+                cpu_widget_state.table.state.current_index,
                 data,
                 app_state.app_config_fields.show_average_cpu,
             );
@@ -225,6 +226,15 @@ impl Painter {
                     is_expanded: app_state.is_expanded,
                     legend_position: None,
                     legend_constraints: None,
+                    pixel_renderer: self.pixel_renderer(),
+                    last_time: app_state
+                        .data_store
+                        .get_data()
+                        .time_series_data
+                        .time
+                        .last()
+                        .copied(),
+                    style_epoch: self.style_epoch(),
                 },
                 graph_data,
             );

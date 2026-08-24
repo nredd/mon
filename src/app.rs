@@ -42,6 +42,7 @@ pub struct AppConfigFields {
     pub update_rate: u64,
     pub temperature_type: TemperatureType,
     pub marker: crate::options::config::flags::GraphMarker,
+    pub pixel_mode: crate::canvas::components::time_series::pixel::PixelMode,
     pub cpu_left_legend: bool,
     pub show_average_cpu: bool, // TODO: Unify this in CPU options
     pub show_cpu_decimal: bool,

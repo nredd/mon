@@ -19,6 +19,7 @@ each time:
 | `hide_avg_cpu`               | Boolean                                                                                                            | Deprecated - use `cpu.hide_avg_cpu`. Hides the average CPU usage.                                                                                                                |
 | `dot_marker`                 | Boolean                                                                                                            | Deprecated, use `marker` instead. Equivalent to `marker = "dot"`.                                                                                                                 |
 | `marker`                     | String (one of ["braille", "octant", "sextant", "quadrant", "half_block", "dot", "block", "bar"])                  | Which glyph family to plot graphs with. Defaults to `braille`.                                                                                                                    |
+| `pixel_graphs`               | String (one of ["off", "auto", "kitty"])                                                                           | Draw graphs as real pixels rather than cell markers. Defaults to `off`.                                                                                                           |
 | `cpu_left_legend`            | Boolean                                                                                                            | Deprecated - use `cpu.left_legend`. Puts the CPU chart legend to the left side.                                                                                                  |
 | `current_usage`              | Boolean                                                                                                            | Deprecated - use `processes.current_usage`. Sets process CPU% to be based on current CPU%.                                                                                       |
 | `group_processes`            | Boolean                                                                                                            | Deprecated - use `processes.default_grouped`. Groups processes with the same name by default.                                                                                    |
@@ -83,3 +84,35 @@ they render as tofu, drop to `quadrant` or `half_block`.
 
 Both spellings of the two-word names work, so `--marker half-block` and
 `marker = "half_block"` are the same thing.
+
+## Pixel graphs
+
+Cell markers cap out at 2x4 subpixels per cell. A terminal that speaks the Kitty graphics
+protocol can draw real pixels instead, which is worth roughly an order of magnitude more
+vertical resolution on a short graph.
+
+| Mode    | Behaviour                                                     |
+| ------- | ------------------------------------------------------------- |
+| `off`   | Cell markers. The default                                     |
+| `auto`  | Query the terminal, and use pixels only if it answers          |
+| `kitty` | Force the Kitty graphics protocol, skipping the query          |
+
+!!! warning "`auto` cannot detect Kitty from inside tmux"
+
+    Measured on Ghostty 1.3.1 + tmux 3.7c with `allow-passthrough on`: the Kitty capability
+    query, wrapped in tmux's DCS passthrough, gets **no reply at all**. Other queries answer
+    fine over the same path -- primary DA returns `ESC [?1;2;4c`, cell size returns
+    `ESC [6;24;11t` -- so passthrough itself is working.
+
+    The image transport is unaffected. Unicode placeholder cells reach tmux's own text
+    buffer with correct row/column diacritics, which is what gives correct clipping,
+    scrolling, and pane switching.
+
+    So under tmux only detection is broken, and `kitty` is the setting to use.
+
+The image covers the data region only. The border, y-axis labels, and x-axis labels are
+still drawn as text by the normal chart, so the pixel path reuses the same axis geometry
+rather than re-deriving it.
+
+If the image cannot be encoded for any reason, the cell-drawn graph underneath stays
+visible, so the failure mode is "looks like `off`" rather than a blank widget.

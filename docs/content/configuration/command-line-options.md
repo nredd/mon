@@ -18,6 +18,7 @@ see information on these options by running `btm -h`, or run `btm --help` to dis
 |                                     | bottom.                                                    |
 | `-m`, `--dot_marker`                | Deprecated, use `--marker dot` instead.                    |
 | `--marker <MARKER>`                 | Which glyph family to plot graphs with.                    |
+| `--pixel_graphs <MODE>`             | Draw graphs as real pixels where supported.                |
 | `-e`, `--expanded`                  | Expand the default widget upon starting the app.           |
 | `--hide_time`                       | Hides the time scale from being shown.                     |
 | `-r`, `--rate <TIME>`               | Sets how often data is refreshed.                          |

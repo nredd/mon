@@ -709,6 +709,17 @@
             "null"
           ]
         },
+        "pixel_graphs": {
+          "description": "Whether graphs are drawn as real pixels via a terminal graphics protocol.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PixelMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "process_command": {
           "type": [
             "boolean",
@@ -1122,6 +1133,26 @@
           ]
         }
       }
+    },
+    "PixelMode": {
+      "description": "Which graphics protocol the pixel path should use.",
+      "oneOf": [
+        {
+          "description": "Draw graphs with cell markers. The default.",
+          "type": "string",
+          "const": "off"
+        },
+        {
+          "description": "Query the terminal and use pixels only if it answers.\n\nNote this cannot select Kitty from inside tmux -- see the module docs.",
+          "type": "string",
+          "const": "auto"
+        },
+        {
+          "description": "Force the Kitty graphics protocol, skipping the query.",
+          "type": "string",
+          "const": "kitty"
+        }
+      ]
     },
     "PowerConfig": {
       "description": "Power graph configuration.\n\nEvery channel is opt-out rather than opt-in, but see `hide_unreported`: on most Apple\nSilicon chips several of these channels are hardwired to zero, and drawing three flat\nlines at the bottom of the chart is worse than drawing none.",

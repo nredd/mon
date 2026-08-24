@@ -18,6 +18,8 @@ use std::{
 use anyhow::{Context, Result};
 pub use config::Config;
 use config::{flags::GraphMarker, style::Styles};
+
+use crate::canvas::components::time_series::pixel::PixelMode;
 use data::TemperatureType;
 pub(crate) use error::{OptionError, OptionResult};
 use indexmap::IndexSet;
@@ -462,6 +464,7 @@ pub(crate) fn init_app(args: BottomArgs, config: Config) -> Result<(App, BottomL
         show_average_cpu: get_show_average_cpu(args, config),
         show_cpu_decimal: config_or!(config, cpu.show_decimal, false),
         marker: get_graph_marker(args, config)?,
+        pixel_mode: get_pixel_mode(args, config)?,
         cpu_left_legend: enabled_option_with_deprecated!(
             args.cpu.cpu_left_legend,
             config,
@@ -1532,6 +1535,21 @@ fn get_graph_marker(args: &BottomArgs, config: &Config) -> OptionResult<GraphMar
     }
 
     Ok(GraphMarker::default())
+}
+
+/// Resolve whether graphs draw as pixels.
+fn get_pixel_mode(args: &BottomArgs, config: &Config) -> OptionResult<PixelMode> {
+    if let Some(name) = &args.general.pixel_graphs {
+        return name.parse().map_err(OptionError::other);
+    }
+
+    if let Some(flags) = &config.flags
+        && let Some(mode) = flags.pixel_graphs
+    {
+        return Ok(mode);
+    }
+
+    Ok(PixelMode::default())
 }
 
 fn get_claude_legend_position(config: &Config) -> OptionResult<Option<LegendPosition>> {
