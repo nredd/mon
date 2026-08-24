@@ -16,7 +16,8 @@ see information on these options by running `btm -h`, or run `btm --help` to dis
 | `--disable_click`                   | Disables mouse clicks.                                     |
 | `--disable_keys`                    | Disables keyboard shortcuts, INCLUDING the ones that stop  |
 |                                     | bottom.                                                    |
-| `-m`, `--dot_marker`                | Uses a dot marker for graphs.                              |
+| `-m`, `--dot_marker`                | Deprecated, use `--marker dot` instead.                    |
+| `--marker <MARKER>`                 | Which glyph family to plot graphs with.                    |
 | `-e`, `--expanded`                  | Expand the default widget upon starting the app.           |
 | `--hide_time`                       | Hides the time scale from being shown.                     |
 | `-r`, `--rate <TIME>`               | Sets how often data is refreshed.                          |

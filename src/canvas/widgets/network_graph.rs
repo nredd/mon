@@ -186,7 +186,7 @@ impl Painter {
                 }
             };
 
-            let marker = self.get_marker(app_state.app_config_fields.use_dot);
+            let marker = self.get_marker(app_state.app_config_fields.marker);
 
             let scaling = match app_state.app_config_fields.network_scale_type {
                 AxisScaling::Log => {

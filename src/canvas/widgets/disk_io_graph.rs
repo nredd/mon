@@ -193,7 +193,7 @@ impl Painter {
                 }
             }
 
-            let marker = self.get_marker(app_state.app_config_fields.use_dot);
+            let marker = self.get_marker(app_state.app_config_fields.marker);
             let y_bounds = AxisBound::Max(adjusted_y_max);
             let scaling = if use_log {
                 ChartScaling::Log2

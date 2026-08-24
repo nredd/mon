@@ -17,7 +17,8 @@ each time:
 | Field                        | Type                                                                                                               | Functionality                                                                                                                                                                    |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `hide_avg_cpu`               | Boolean                                                                                                            | Deprecated - use `cpu.hide_avg_cpu`. Hides the average CPU usage.                                                                                                                |
-| `dot_marker`                 | Boolean                                                                                                            | Uses a dot marker for graphs.                                                                                                                                                    |
+| `dot_marker`                 | Boolean                                                                                                            | Deprecated, use `marker` instead. Equivalent to `marker = "dot"`.                                                                                                                 |
+| `marker`                     | String (one of ["braille", "octant", "sextant", "quadrant", "half_block", "dot", "block", "bar"])                  | Which glyph family to plot graphs with. Defaults to `braille`.                                                                                                                    |
 | `cpu_left_legend`            | Boolean                                                                                                            | Deprecated - use `cpu.left_legend`. Puts the CPU chart legend to the left side.                                                                                                  |
 | `current_usage`              | Boolean                                                                                                            | Deprecated - use `processes.current_usage`. Sets process CPU% to be based on current CPU%.                                                                                       |
 | `group_processes`            | Boolean                                                                                                            | Deprecated - use `processes.default_grouped`. Groups processes with the same name by default.                                                                                    |
@@ -60,3 +61,25 @@ each time:
 | `no_write`                   | Boolean                                                                                                            | Disables writing to the config file.                                                                                                                                             |
 | `hide_k_threads`             | Boolean                                                                                                            | Deprecated - use `processes.hide_k_threads`. Hide kernel threads from being shown.                                                                                               |
 | `free_arc`                   | Boolean                                                                                                            | Deprecated - use `memory.free_arc`. Subtract ARC memory that can be freed from memory usage.                                                                                     |
+
+## Graph markers
+
+`marker` picks which glyph family graphs are plotted with, from finest to coarsest:
+
+| Marker       | Resolution per cell | Glyphs                        |
+| ------------ | ------------------- | ----------------------------- |
+| `braille`    | 2x4                 | Braille patterns. The default |
+| `octant`     | 2x4                 | Legacy Computing octants      |
+| `sextant`    | 2x3                 | Legacy Computing sextants     |
+| `quadrant`   | 2x2                 | Quadrant blocks               |
+| `half_block` | 1x2                 | `▀` `▄` `█`                   |
+| `dot`        | 1x1                 | `•`                           |
+| `block`      | 1x1                 | `█`, coloured on the background |
+| `bar`        | 1x1                 | `▄`                           |
+
+Braille gives the most detail but needs a font with good braille coverage. The Legacy
+Computing blocks that `octant` and `sextant` use are newer and less widely covered still; if
+they render as tofu, drop to `quadrant` or `half_block`.
+
+Both spellings of the two-word names work, so `--marker half-block` and
+`marker = "half_block"` are the same thing.

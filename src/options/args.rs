@@ -217,16 +217,36 @@ pub struct GeneralArgs {
     )]
     pub disable_keys: bool,
 
-    // TODO: Change this to accept a string with the type of marker.
     #[arg(
         short = 'm',
         long,
         action = ArgAction::SetTrue,
-        help = "Uses a dot marker for graphs.",
-        long_help = "Uses a dot marker for graphs as opposed to the default braille marker.",
+        help = "Deprecated, use '--marker dot' instead.",
+        long_help = "Deprecated alias for '--marker dot'. Uses a dot marker for graphs as opposed to the default braille marker.",
         alias = "dot-marker"
     )]
     pub dot_marker: bool,
+
+    #[arg(
+        long,
+        value_name = "MARKER",
+        help = "Which glyph family to plot graphs with.",
+        long_help = indoc! {
+            "Which glyph family to plot graphs with. Supported markers are:
+            - braille    (2x4 dots per cell; the finest, and the default)
+            - octant     (2x4 blocks per cell)
+            - sextant    (2x3 blocks per cell)
+            - quadrant   (2x2 blocks per cell)
+            - half_block (1x2 blocks per cell)
+            - dot        (one '•' per cell)
+            - block      (one solid block per cell)
+            - bar        (one '▄' per cell)
+
+            Fonts differ in which of these they actually render, which is why this is
+            configurable. This supersedes '--dot_marker'."
+        }
+    )]
+    pub marker: Option<String>,
 
     #[arg(
         short = 'e',

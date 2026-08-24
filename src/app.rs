@@ -41,7 +41,7 @@ pub enum AxisScaling {
 pub struct AppConfigFields {
     pub update_rate: u64,
     pub temperature_type: TemperatureType,
-    pub use_dot: bool,
+    pub marker: crate::options::config::flags::GraphMarker,
     pub cpu_left_legend: bool,
     pub show_average_cpu: bool, // TODO: Unify this in CPU options
     pub show_cpu_decimal: bool,

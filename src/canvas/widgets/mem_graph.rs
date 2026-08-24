@@ -178,7 +178,7 @@ impl Painter {
             };
 
             let border_style = self.get_border_style(widget_id, app_state.current_widget.widget_id);
-            let marker = self.get_marker(app_state.app_config_fields.use_dot);
+            let marker = self.get_marker(app_state.app_config_fields.marker);
 
             mem_state.graph.draw(
                 f,

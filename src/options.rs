@@ -17,7 +17,7 @@ use std::{
 
 use anyhow::{Context, Result};
 pub use config::Config;
-use config::style::Styles;
+use config::{flags::GraphMarker, style::Styles};
 use data::TemperatureType;
 pub(crate) use error::{OptionError, OptionResult};
 use indexmap::IndexSet;
@@ -461,7 +461,7 @@ pub(crate) fn init_app(args: BottomArgs, config: Config) -> Result<(App, BottomL
             .context("Update 'temperature_type' in your config file.")?,
         show_average_cpu: get_show_average_cpu(args, config),
         show_cpu_decimal: config_or!(config, cpu.show_decimal, false),
-        use_dot: is_flag_enabled!(dot_marker, args.general, config),
+        marker: get_graph_marker(args, config)?,
         cpu_left_legend: enabled_option_with_deprecated!(
             args.cpu.cpu_left_legend,
             config,
@@ -1497,6 +1497,41 @@ fn get_disk_io_legend_position(config: &Config) -> OptionResult<Option<LegendPos
         "disk_io_graph.legend_position",
         None,
     )
+}
+
+/// Resolve which glyph family graphs are plotted with.
+///
+/// Precedence is `--marker`, then `flags.marker`, then the deprecated `--dot_marker` /
+/// `flags.dot_marker`, then braille. The deprecated form is honoured but warns, following
+/// the same idiom as `enabled_option_with_deprecated!` -- that macro itself only handles
+/// booleans, so this cannot use it directly.
+fn get_graph_marker(args: &BottomArgs, config: &Config) -> OptionResult<GraphMarker> {
+    if let Some(name) = &args.general.marker {
+        return name.parse().map_err(|err: String| OptionError::other(err));
+    }
+
+    if let Some(flags) = &config.flags
+        && let Some(marker) = flags.marker
+    {
+        return Ok(marker);
+    }
+
+    // Deprecated, but still honoured.
+    if args.general.dot_marker {
+        return Ok(GraphMarker::Dot);
+    }
+
+    if let Some(flags) = &config.flags
+        && let Some(dot_marker) = flags.dot_marker
+    {
+        deprecated_warning("dot_marker", "marker");
+
+        if dot_marker {
+            return Ok(GraphMarker::Dot);
+        }
+    }
+
+    Ok(GraphMarker::default())
 }
 
 fn get_claude_legend_position(config: &Config) -> OptionResult<Option<LegendPosition>> {

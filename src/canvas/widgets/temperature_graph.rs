@@ -69,7 +69,7 @@ impl Painter {
                 })
                 .collect();
 
-            let marker = self.get_marker(app_state.app_config_fields.use_dot);
+            let marker = self.get_marker(app_state.app_config_fields.marker);
 
             let y_labels: Vec<Cow<'_, str>> = y_labels.into_iter().map(Into::into).collect();
 

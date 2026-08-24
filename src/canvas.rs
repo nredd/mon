@@ -18,6 +18,7 @@ use ratatui::{
     widgets::Paragraph,
 };
 
+use crate::options::config::flags::GraphMarker;
 use crate::{
     app::{
         App,
@@ -63,11 +64,20 @@ impl Painter {
         }
     }
 
-    pub(crate) fn get_marker(&self, use_dot: bool) -> Marker {
-        if use_dot {
-            Marker::Dot
-        } else {
-            Marker::Braille
+    /// Map the configured marker onto ratatui's.
+    ///
+    /// Every arm here was already implemented by the vendored chart renderer; only
+    /// braille and dot were previously reachable.
+    pub(crate) fn get_marker(&self, marker: GraphMarker) -> Marker {
+        match marker {
+            GraphMarker::Braille => Marker::Braille,
+            GraphMarker::Dot => Marker::Dot,
+            GraphMarker::Block => Marker::Block,
+            GraphMarker::Bar => Marker::Bar,
+            GraphMarker::HalfBlock => Marker::HalfBlock,
+            GraphMarker::Quadrant => Marker::Quadrant,
+            GraphMarker::Sextant => Marker::Sextant,
+            GraphMarker::Octant => Marker::Octant,
         }
     }
 

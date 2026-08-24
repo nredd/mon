@@ -614,6 +614,7 @@
           ]
         },
         "dot_marker": {
+          "description": "Deprecated in favour of `marker`. Kept so old configs keep working.",
           "type": [
             "boolean",
             "null"
@@ -659,6 +660,17 @@
           "type": [
             "boolean",
             "null"
+          ]
+        },
+        "marker": {
+          "description": "Which glyph family graphs are plotted with.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GraphMarker"
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "memory_legend": {
@@ -804,6 +816,51 @@
           ]
         }
       }
+    },
+    "GraphMarker": {
+      "description": "Which glyph family a graph is plotted with.\n\nEvery one of these is already implemented by the vendored chart renderer -- they were\nsimply unreachable, because the marker was picked from a hardcoded braille/dot pair.\nThis resolves upstream's own `TODO` in `options/args.rs`.\n\nResolution goes from finest to coarsest: braille packs 2x4 dots into a cell, octant and\nsextant 2x4 and 2x3 blocks, quadrant 2x2, half-block 1x2, and dot/block/bar one glyph\nper cell. Fonts vary in what they actually render, which is the whole reason this is\nconfigurable.",
+      "oneOf": [
+        {
+          "description": "2x4 braille dots per cell. The finest available, and the default.",
+          "type": "string",
+          "const": "braille"
+        },
+        {
+          "description": "A single `•` per cell.",
+          "type": "string",
+          "const": "dot"
+        },
+        {
+          "description": "A solid block per cell, coloured on the background.",
+          "type": "string",
+          "const": "block"
+        },
+        {
+          "description": "A `▄` per cell.",
+          "type": "string",
+          "const": "bar"
+        },
+        {
+          "description": "1x2 half blocks per cell.",
+          "type": "string",
+          "const": "half_block"
+        },
+        {
+          "description": "2x2 quadrant blocks per cell.",
+          "type": "string",
+          "const": "quadrant"
+        },
+        {
+          "description": "2x3 sextant blocks per cell.",
+          "type": "string",
+          "const": "sextant"
+        },
+        {
+          "description": "2x4 octant blocks per cell.",
+          "type": "string",
+          "const": "octant"
+        }
+      ]
     },
     "GraphStyle": {
       "description": "General styling for graph widgets.",
