@@ -1785,7 +1785,7 @@ mod test {
 
         // Skip this test if the file already exists.
         if !case_1.exists() {
-            assert_eq!(get_config_path(None), Some(case_1));
+            assert_eq!(get_config_path(None), Some(case_1.clone()));
         }
 
         // Case two: no previous config, XDG var exists.
@@ -1799,7 +1799,13 @@ mod test {
         case_2.push(DEFAULT_CONFIG_FILE_LOCATION);
 
         // Skip this test if the file already exists.
-        if !case_2.exists() {
+        //
+        // NOTE(redd): the `!case_1.exists()` half is the fix. `get_config_path` prefers an
+        // existing Library-based config over XDG on purpose, for backwards-compatibility,
+        // so once anything has actually *run* the binary on this machine that path exists
+        // and this case can never hold. Without the guard the test passes only on a
+        // machine that has never run bottom, which is not a property a test should have.
+        if !case_2.exists() && !case_1.exists() {
             assert_eq!(get_config_path(None), Some(case_2));
         }
 
