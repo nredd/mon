@@ -6,8 +6,8 @@ use crate::{
     utils::input::InputFieldState,
     widgets::{
         BatteryWidgetState, CpuWidgetState, DiskIoGraphWidgetState, DiskTableWidget,
-        MemWidgetState, NetWidgetState, ProcWidgetState, TempGraphWidgetState, TempWidgetState,
-        query::ProcessQuery,
+        MemWidgetState, NetWidgetState, PowerGraphWidgetState, ProcWidgetState,
+        TempGraphWidgetState, TempWidgetState, query::ProcessQuery,
     },
 };
 
@@ -20,6 +20,7 @@ pub struct AppWidgetStates {
     pub temp_graph_state: TempGraphStates,
     pub disk_state: DiskState,
     pub disk_io_graph_state: DiskIoGraphStates,
+    pub power_graph_state: PowerGraphStates,
     pub battery_state: AppBatteryState,
     pub basic_table_widget_state: Option<BasicTableWidgetState>,
 }
@@ -205,6 +206,21 @@ impl DiskIoGraphStates {
     }
 
     pub fn get_mut_widget_state(&mut self, widget_id: u64) -> Option<&mut DiskIoGraphWidgetState> {
+        self.widget_states.get_mut(&widget_id)
+    }
+}
+
+/// Holds per-widget state for all power graph instances in the layout.
+pub struct PowerGraphStates {
+    pub widget_states: HashMap<u64, PowerGraphWidgetState>,
+}
+
+impl PowerGraphStates {
+    pub fn init(widget_states: HashMap<u64, PowerGraphWidgetState>) -> Self {
+        PowerGraphStates { widget_states }
+    }
+
+    pub fn get_mut_widget_state(&mut self, widget_id: u64) -> Option<&mut PowerGraphWidgetState> {
         self.widget_states.get_mut(&widget_id)
     }
 }

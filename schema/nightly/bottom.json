@@ -65,6 +65,16 @@
         }
       ]
     },
+    "power": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PowerConfig"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "processes": {
       "anyOf": [
         {
@@ -1010,6 +1020,77 @@
         }
       }
     },
+    "PowerConfig": {
+      "description": "Power graph configuration.\n\nEvery channel is opt-out rather than opt-in, but see `hide_unreported`: on most Apple\nSilicon chips several of these channels are hardwired to zero, and drawing three flat\nlines at the bottom of the chart is worse than drawing none.",
+      "type": "object",
+      "properties": {
+        "hide_unreported": {
+          "description": "Whether to drop channels that have only ever reported zero. Defaults to true.\n\nNot every chip reports every channel. On an M4, `cpu`, `ane`, and `ram` sit at a\nconstant `0.0` while only `system` and `gpu` carry real figures, so leaving this on\nkeeps the chart to the series that mean something.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "legend_position": {
+          "description": "Where to position the legend within the widget.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "show_ane": {
+          "description": "Whether to show Apple Neural Engine power. Defaults to true.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "show_cpu": {
+          "description": "Whether to show CPU package power. Defaults to true.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "show_gpu": {
+          "description": "Whether to show GPU power. Defaults to true.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "show_ram": {
+          "description": "Whether to show DRAM power. Defaults to false -- most chips do not report it.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "show_system": {
+          "description": "Whether to show whole-system power. Defaults to true.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      }
+    },
+    "PowerStyle": {
+      "description": "Styling specific to the power graph widget.",
+      "type": "object",
+      "properties": {
+        "colours": {
+          "description": "Colour of each power channel's graph line. Read in channel order: system, CPU, GPU,\nANE, then RAM.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/ColourStr"
+          }
+        }
+      }
+    },
     "ProcColumn": {
       "description": "A column in the process widget.",
       "type": "string",
@@ -1323,6 +1404,17 @@
           "anyOf": [
             {
               "$ref": "#/$defs/NetworkStyle"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "power": {
+          "description": "Styling for the power graph widget.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PowerStyle"
             },
             {
               "type": "null"

@@ -21,7 +21,6 @@ pub mod disks;
 pub mod error;
 pub mod memory;
 pub mod network;
-#[cfg(target_os = "macos")]
 pub mod power;
 pub mod processes;
 pub mod temperature;
@@ -57,7 +56,6 @@ pub struct Data {
     pub io: Option<disks::IoHarvest>,
     #[cfg(feature = "battery")]
     pub list_of_batteries: Option<Vec<batteries::BatteryData>>,
-    #[cfg(target_os = "macos")]
     pub power: Option<power::PowerData>,
     #[cfg(feature = "zfs")]
     pub arc: Option<memory::MemData>,
@@ -82,7 +80,6 @@ impl Default for Data {
             network: None,
             #[cfg(feature = "battery")]
             list_of_batteries: None,
-            #[cfg(target_os = "macos")]
             power: None,
             #[cfg(feature = "zfs")]
             arc: None,

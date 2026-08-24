@@ -6,6 +6,7 @@ mod ignore_list;
 pub mod layout;
 pub mod memory_graph;
 pub mod network_graph;
+pub mod power;
 pub mod process;
 pub mod style;
 pub mod temperature;
@@ -15,6 +16,7 @@ use disk::DiskConfig;
 use disk_io_graph::DiskIoGraphConfig;
 use flags::GeneralConfig;
 use network_graph::NetworkGraphConfig;
+use power::PowerConfig;
 use serde::{Deserialize, Serialize};
 use style::StyleConfig;
 use temperature::TempConfig;
@@ -35,6 +37,7 @@ pub struct Config {
     pub(crate) processes: Option<ProcessesConfig>,
     pub(crate) disk: Option<DiskConfig>,
     pub(crate) disk_io_graph: Option<DiskIoGraphConfig>,
+    pub(crate) power: Option<PowerConfig>,
     pub(crate) temperature: Option<TempConfig>,
     pub(crate) temperature_graph: Option<TempGraphConfig>,
     #[serde(alias = "network")]

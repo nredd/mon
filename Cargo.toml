@@ -3,6 +3,9 @@
 # `[package] name = "bottom"` intact is deliberate so rebases onto upstream stay clean.
 [workspace]
 members = ["crates/claude-metrics"]
+# `scripts/schema_gen` is a standalone tool with its own `Cargo.lock`. Adding the
+# workspace above swept it in and broke `scripts/schema/nightly.sh`; it stays out.
+exclude = ["scripts/schema_gen"]
 
 [package]
 name = "bottom"

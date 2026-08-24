@@ -1,0 +1,24 @@
+# Power widget with an explicit layout, so the canvas dispatch path is actually exercised.
+# `power` is not in the default layout, and a missing dispatch arm in `canvas.rs` would
+# otherwise be invisible -- the match there ends in `_ => {}`, so rustc cannot catch it.
+
+[[row]]
+  [[row.child]]
+  type = "power"
+
+[[row]]
+  [[row.child]]
+  type = "proc"
+  default = true
+
+[power]
+show_system = true
+show_cpu = true
+show_gpu = true
+show_ane = true
+show_ram = true
+hide_unreported = false
+legend_position = "top-left"
+
+[styles.power]
+colours = ["red", "green", "blue", "yellow", "magenta"]

@@ -44,6 +44,34 @@ fn run_and_kill_cfg(path: &str) {
     run_and_kill(&["-C", path]);
 }
 
+/// Run for a moment, then return whatever was drawn to the pty.
+///
+/// Unlike [`run_and_kill`], this asserts on the *contents* of a frame rather than just on
+/// the process staying alive, which is what it takes to catch a widget that parses fine but
+/// never gets dispatched to.
+fn run_and_capture(args: &[&str]) -> String {
+    let (master, mut handle) = spawn_mon_in_pty(args);
+    let mut reader = master.try_clone_reader().unwrap();
+    let _ = master.take_writer().unwrap();
+
+    // Long enough for a first collection tick and a draw.
+    thread::sleep(Duration::from_millis(1500));
+
+    if let Ok(Some(exit)) = handle.try_wait() {
+        panic!("program terminated unexpectedly (exit status: {exit:?})");
+    }
+
+    // Read what has been drawn so far. The child is still running and the pty will not
+    // report EOF, so take a bounded chunk rather than reading to the end.
+    let mut buf = vec![0u8; 64 * 1024];
+    let read = reader.read(&mut buf).unwrap_or(0);
+    buf.truncate(read);
+
+    handle.kill().unwrap();
+
+    String::from_utf8_lossy(&buf).into_owned()
+}
+
 #[test]
 fn test_basic() {
     run_and_kill(&[]);
@@ -275,6 +303,26 @@ fn test_newer_temperature() {
 #[test]
 fn test_disk_io_graph() {
     run_and_kill_cfg("./tests/valid_configs/widget/disk_io_graph.toml");
+}
+
+/// The power widget has to actually *draw*, not just parse and stay alive.
+///
+/// The three dispatch sites in `canvas.rs` all end in `_ => {}`, so a missing arm compiles
+/// clean and silently renders nothing. Asserting the rendered title reaches the pty is the
+/// only thing that catches it.
+#[test]
+fn test_power_graph_renders() {
+    let rendered = run_and_capture(&["-C", "./tests/valid_configs/widget/power.toml"]);
+
+    assert!(
+        !rendered.trim().is_empty(),
+        "the power layout rendered an empty buffer"
+    );
+    assert!(
+        rendered.contains("Power"),
+        "the power widget did not draw its title -- likely a missing dispatch arm in \
+         `canvas.rs`. Rendered output was:\n{rendered}"
+    );
 }
 
 /// This uses deprecated temperature settings - once they are removed, this test file should be moved to invalid configs.

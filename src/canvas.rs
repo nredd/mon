@@ -288,6 +288,12 @@ impl Painter {
                         rect[0],
                         app_state.current_widget.widget_id,
                     ),
+                    Power => self.draw_power_graph(
+                        f,
+                        app_state,
+                        rect[0],
+                        app_state.current_widget.widget_id,
+                    ),
                     _ => {}
                 }
             } else if app_state.app_config_fields.use_basic_mode {
@@ -411,6 +417,9 @@ impl Painter {
                             DiskIoGraph => {
                                 self.draw_disk_io_graph(f, app_state, vertical_chunks[3], widget_id)
                             }
+                            Power => {
+                                self.draw_power_graph(f, app_state, vertical_chunks[3], widget_id)
+                            }
                             _ => {}
                         }
                     }
@@ -501,6 +510,7 @@ impl Painter {
                     DiskIoGraph => {
                         self.draw_disk_io_graph(f, app_state, *draw_loc, widget.widget_id)
                     }
+                    Power => self.draw_power_graph(f, app_state, *draw_loc, widget.widget_id),
                     _ => {}
                 }
             }

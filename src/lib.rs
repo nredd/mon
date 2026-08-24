@@ -29,7 +29,6 @@ pub mod widgets;
 
 // Re-exported so `examples/power_dump.rs` can drive the collector the same way the
 // widget does. `collection` itself stays `pub(crate)`, as upstream has it.
-#[cfg(target_os = "macos")]
 pub use collection::power;
 
 use std::{

@@ -379,6 +379,7 @@ pub(crate) fn init_app(args: BottomArgs, config: Config) -> Result<(App, BottomL
     let mut temp_graph_state_map: FxHashMap<u64, TempGraphWidgetState> = FxHashMap::default();
     let mut disk_state_map: FxHashMap<u64, DiskTableWidget> = FxHashMap::default();
     let mut disk_io_graph_state_map: FxHashMap<u64, DiskIoGraphWidgetState> = FxHashMap::default();
+    let mut power_graph_state_map: FxHashMap<u64, PowerGraphWidgetState> = FxHashMap::default();
     let mut battery_state_map: FxHashMap<u64, BatteryWidgetState> = FxHashMap::default();
 
     let autohide_timer = if autohide_time {
@@ -430,6 +431,7 @@ pub(crate) fn init_app(args: BottomArgs, config: Config) -> Result<(App, BottomL
     let memory_legend_position = get_memory_legend_position(args, config)?;
     let temperature_legend_position = get_temperature_legend_position(config)?;
     let disk_io_legend_position = get_disk_io_legend_position(config)?;
+    let power_legend_position = get_power_legend_position(config)?;
     let disk_io_name_filter = match &config.disk_io_graph {
         Some(cfg) => get_ignore_list(&cfg.name_filter)
             .context("Update 'disk_io_graph.name_filter' in your config file")?,
@@ -536,6 +538,7 @@ pub(crate) fn init_app(args: BottomArgs, config: Config) -> Result<(App, BottomL
             .unwrap_or_default(),
         temperature_legend_position,
         disk_io_legend_position,
+        power_legend_position,
         disk_show_unmounted,
         disk_io_graph_show_unmounted,
     };
@@ -715,6 +718,48 @@ pub(crate) fn init_app(args: BottomArgs, config: Config) -> Result<(App, BottomL
                                 ),
                             );
                         }
+                        Power => {
+                            let power_cfg = config.power.as_ref();
+                            let shown = PowerChannel::ALL
+                                .into_iter()
+                                .filter(|channel| {
+                                    let (setting, default) = match channel {
+                                        PowerChannel::System => {
+                                            (power_cfg.and_then(|c| c.show_system), true)
+                                        }
+                                        PowerChannel::Cpu => {
+                                            (power_cfg.and_then(|c| c.show_cpu), true)
+                                        }
+                                        PowerChannel::Gpu => {
+                                            (power_cfg.and_then(|c| c.show_gpu), true)
+                                        }
+                                        PowerChannel::Ane => {
+                                            (power_cfg.and_then(|c| c.show_ane), true)
+                                        }
+                                        // Off by default: most chips never report it, and
+                                        // `hide_unreported` would drop it anyway.
+                                        PowerChannel::Ram => {
+                                            (power_cfg.and_then(|c| c.show_ram), false)
+                                        }
+                                    };
+
+                                    setting.unwrap_or(default)
+                                })
+                                .collect();
+
+                            let hide_unreported =
+                                power_cfg.and_then(|c| c.hide_unreported).unwrap_or(true);
+
+                            power_graph_state_map.insert(
+                                widget.widget_id,
+                                PowerGraphWidgetState::new(
+                                    ts_config,
+                                    autohide_timer,
+                                    shown,
+                                    hide_unreported,
+                                ),
+                            );
+                        }
                         Battery => {
                             battery_state_map
                                 .insert(widget.widget_id, BatteryWidgetState::default());
@@ -764,11 +809,7 @@ pub(crate) fn init_app(args: BottomArgs, config: Config) -> Result<(App, BottomL
         use_temp_graph: used_widget_set.contains(&TempGraph),
         use_disk_io_graph: used_widget_set.contains(&DiskIoGraph),
         use_battery: used_widget_set.contains(&Battery),
-        // NOTE(redd): flipped on by `BottomWidgetType::Power` once the widget exists.
-        // Until then nothing spawns the sampler thread; `examples/power_dump.rs` is
-        // what exercises the collector.
-        #[cfg(target_os = "macos")]
-        use_power: false,
+        use_power: used_widget_set.contains(&Power),
     };
 
     let (disk_name_filter, disk_mount_filter) = {
@@ -809,6 +850,7 @@ pub(crate) fn init_app(args: BottomArgs, config: Config) -> Result<(App, BottomL
         temp_graph_state: TempGraphStates::init(temp_graph_state_map),
         disk_state: DiskState::init(disk_state_map),
         disk_io_graph_state: DiskIoGraphStates::init(disk_io_graph_state_map),
+        power_graph_state: PowerGraphStates::init(power_graph_state_map),
         battery_state: AppBatteryState::init(battery_state_map),
         basic_table_widget_state,
     };
@@ -1425,6 +1467,19 @@ fn get_disk_io_legend_position(config: &Config) -> OptionResult<Option<LegendPos
             .and_then(|settings| settings.legend_position.as_ref()),
         None,
         "disk_io_graph.legend_position",
+        None,
+    )
+}
+
+fn get_power_legend_position(config: &Config) -> OptionResult<Option<LegendPosition>> {
+    parse_legend_position(
+        None,
+        config
+            .power
+            .as_ref()
+            .and_then(|settings| settings.legend_position.as_ref()),
+        None,
+        "power.legend_position",
         None,
     )
 }

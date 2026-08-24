@@ -224,6 +224,10 @@ impl InnerData {
             }
         }
 
+        if used_widgets.use_power {
+            self.time_series_data.update_power(data.power.as_ref());
+        }
+
         if let Some(list_of_processes) = data.list_of_processes {
             self.process_data.ingest(list_of_processes);
         }

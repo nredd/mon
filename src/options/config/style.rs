@@ -7,6 +7,7 @@ mod disk_io_graph;
 mod graphs;
 mod memory;
 mod network;
+mod power;
 mod tables;
 mod temp_graph;
 mod themes;
@@ -21,6 +22,7 @@ use disk_io_graph::DiskIoGraphStyle;
 use graphs::GraphStyle;
 use memory::MemoryStyle;
 use network::NetworkStyle;
+use power::PowerStyle;
 use ratatui::{style::Style, widgets::BorderType};
 use serde::{Deserialize, Serialize};
 use tables::TableStyle;
@@ -89,6 +91,9 @@ pub(crate) struct StyleConfig {
     /// Styling for the disk I/O graph widget.
     pub(crate) disk_io_graph: Option<DiskIoGraphStyle>,
 
+    /// Styling for the power graph widget.
+    pub(crate) power: Option<PowerStyle>,
+
     /// Styling for the temperature graph widget.
     pub(crate) temp_graph: Option<TempGraphStyle>,
 
@@ -126,6 +131,7 @@ pub struct Styles {
     pub(crate) temp_graph_colour_styles: Vec<Style>,
     pub(crate) disk_io_read_colour_styles: Vec<Style>,
     pub(crate) disk_io_write_colour_styles: Vec<Style>,
+    pub(crate) power_colour_styles: Vec<Style>,
     pub(crate) border_style: Style,
     pub(crate) highlighted_border_style: Style,
     pub(crate) text_style: Style,
@@ -209,6 +215,9 @@ impl Styles {
             config.disk_io_graph,
             write_colours
         );
+
+        // Power graph
+        set_colour_list!(self.power_colour_styles, config.power, colours);
 
         // Memory
         set_colour!(self.ram_style, config.memory, ram_colour);

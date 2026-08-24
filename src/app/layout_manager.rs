@@ -939,6 +939,7 @@ pub enum BottomWidgetType {
     TempGraph,
     Disk,
     DiskIoGraph,
+    Power,
     BasicCpu,
     BasicMem,
     BasicNet,
@@ -954,7 +955,7 @@ impl BottomWidgetType {
 
     pub fn is_widget_graph(&self) -> bool {
         use BottomWidgetType::*;
-        matches!(self, Cpu | Net | Mem | TempGraph | DiskIoGraph)
+        matches!(self, Cpu | Net | Mem | TempGraph | DiskIoGraph | Power)
     }
 
     pub fn get_pretty_name(&self) -> &str {
@@ -968,6 +969,10 @@ impl BottomWidgetType {
             Disk => "Disks",
             Battery => "Battery",
             TempGraph => "Temperature",
+            // NOTE(redd): the `_` arm below means a missing entry here is a silent blank
+            // title, not a compile error. Upstream's `DiskIoGraph` is missing for exactly
+            // that reason -- left alone here to keep this diff to the power widget.
+            Power => "Power",
             _ => "",
         }
     }
@@ -987,6 +992,7 @@ impl std::str::FromStr for BottomWidgetType {
             "temp_graph" | "temperature_graph" => Ok(BottomWidgetType::TempGraph),
             "disk" => Ok(BottomWidgetType::Disk),
             "disk_io_graph" => Ok(BottomWidgetType::DiskIoGraph),
+            "power" => Ok(BottomWidgetType::Power),
             "empty" => Ok(BottomWidgetType::Empty),
             #[cfg(feature = "battery")]
             "battery" | "batt" => Ok(BottomWidgetType::Battery),
@@ -1013,6 +1019,8 @@ Supported widget names:
 |              disk              |
 +--------------------------------+
 |          disk_io_graph         |
++--------------------------------+
+|              power             |
 +--------------------------------+
 |          batt, battery         |
 +--------------------------------+
@@ -1044,6 +1052,8 @@ Supported widget names:
 +--------------------------------+
 |          disk_io_graph         |
 +--------------------------------+
+|              power             |
++--------------------------------+
 |              empty             |
 +--------------------------------+
                 ",
@@ -1067,6 +1077,49 @@ pub struct UsedWidgets {
     pub use_temp_graph: bool,
     pub use_disk_io_graph: bool,
     pub use_battery: bool,
-    #[cfg(target_os = "macos")]
     pub use_power: bool,
+}
+
+#[cfg(test)]
+mod power_widget_tests {
+    use super::BottomWidgetType;
+
+    /// Three of the sites a new graph widget has to be registered at are matches that end
+    /// in a catch-all, so forgetting one compiles clean and fails silently at runtime.
+    /// These assertions are what turns that into a test failure.
+    #[test]
+    fn power_is_registered_everywhere_a_catch_all_would_hide() {
+        let power: BottomWidgetType = "power".parse().expect("`power` must parse as a widget");
+        assert_eq!(power, BottomWidgetType::Power);
+
+        assert!(
+            power.is_widget_graph(),
+            "`Power` must count as a graph or it gets no timeseries state"
+        );
+        assert_eq!(
+            power.get_pretty_name(),
+            "Power",
+            "`get_pretty_name` ends in `_ => \"\"`, so a missing arm is a blank title"
+        );
+    }
+
+    /// The `FromStr` error branch hand-draws an ASCII table of valid widget names. It is a
+    /// plain string literal, so it drifts from the actual `FromStr` arms unnoticed.
+    ///
+    /// There are two such tables, picked by `cfg(feature = "battery")`, so only one is
+    /// compiled into any given build -- this checks whichever one is active, and CI builds
+    /// both feature configurations.
+    #[test]
+    fn power_is_listed_in_the_help_table() {
+        let err = "definitely_not_a_widget"
+            .parse::<BottomWidgetType>()
+            .expect_err("an unknown widget name must be an error")
+            .to_string();
+
+        assert_eq!(
+            err.matches("power").count(),
+            1,
+            "the widget-name table in the `FromStr` error must list `power`. Error was:\n{err}"
+        );
+    }
 }

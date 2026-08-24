@@ -86,6 +86,7 @@ pub struct AppConfigFields {
     pub default_disk_sort_order: SortOrder,
     pub temperature_legend_position: Option<LegendPosition>,
     pub disk_io_legend_position: Option<LegendPosition>,
+    pub power_legend_position: Option<LegendPosition>,
     pub disk_show_unmounted: bool,
     pub disk_io_graph_show_unmounted: bool,
 }
@@ -217,6 +218,13 @@ impl App {
         }
 
         for widget_state in self.states.temp_graph_state.widget_states.values_mut() {
+            widget_state.graph.state_mut().reset_zoom();
+        }
+
+        // NOTE(redd): this loop is hand-maintained per state map, so a new graph widget is
+        // silently skipped rather than failing to compile. Upstream's `disk_io_graph_state`
+        // is missing for that reason -- left alone to keep this diff to the power widget.
+        for widget_state in self.states.power_graph_state.widget_states.values_mut() {
             widget_state.graph.state_mut().reset_zoom();
         }
     }
@@ -2019,6 +2027,16 @@ impl App {
                 if let Some(widget_state) = self
                     .states
                     .disk_io_graph_state
+                    .get_mut_widget_state(self.current_widget.widget_id) =>
+            {
+                Some(widget_state.graph.state_mut())
+            }
+            // NOTE(redd): this match ends in `_ => None`, so forgetting an arm here does
+            // not fail to compile -- it just makes the zoom keys silently do nothing.
+            BottomWidgetType::Power
+                if let Some(widget_state) = self
+                    .states
+                    .power_graph_state
                     .get_mut_widget_state(self.current_widget.widget_id) =>
             {
                 Some(widget_state.graph.state_mut())

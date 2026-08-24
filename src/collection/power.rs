@@ -20,11 +20,13 @@
 //!
 //! [macmon]: https://github.com/vladkens/macmon
 
+#[cfg(target_os = "macos")]
 use std::{
     sync::mpsc::{self, Receiver, TryRecvError},
     thread,
 };
 
+#[cfg(target_os = "macos")]
 use macmon::{Metrics, Sampler};
 
 /// Per-cluster CPU figures for one sampling interval.
@@ -67,6 +69,7 @@ pub struct PowerData {
     pub gpu_active_ratio: f32,
 }
 
+#[cfg(target_os = "macos")]
 impl PowerData {
     /// Build from a raw macmon sample plus the static SoC labels.
     fn from_metrics(metrics: &Metrics, ecpu_label: &str, pcpu_label: &str) -> Self {
@@ -99,6 +102,7 @@ impl PowerData {
 }
 
 /// A message from the sampling worker.
+#[cfg(target_os = "macos")]
 type Sample = Result<PowerData, String>;
 
 /// Owns the macmon sampling thread and hands back the most recent sample.
@@ -106,6 +110,7 @@ type Sample = Result<PowerData, String>;
 /// Dropping this closes the channel, which makes the worker exit after its current sample
 /// completes -- there is no way to interrupt a `get_metrics` call already in flight, so
 /// shutdown lags by up to one interval.
+#[cfg(target_os = "macos")]
 #[derive(Debug)]
 pub struct PowerSampler {
     rx: Receiver<Sample>,
@@ -119,6 +124,7 @@ pub struct PowerSampler {
     received: u64,
 }
 
+#[cfg(target_os = "macos")]
 impl PowerSampler {
     /// Spawn the sampling worker.
     ///
@@ -225,7 +231,7 @@ impl PowerSampler {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "macos"))]
 mod tests {
     use super::*;
 

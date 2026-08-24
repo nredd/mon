@@ -133,6 +133,15 @@ These can be set under `[styles.temp_graph]`:
 | -------------------------- | -------------------------------------------------------------- | ----------------------------------------------------- |
 | `temp_graph_colour_styles` | Colour of each temperature sensor's graph line. Read in order. | `temp_graph_colour_styles = ["Red", "Blue", "Green"]` |
 
+#### Power
+
+These can be set under `[styles.power]`. macOS + Apple Silicon only -- see
+[the power widget page](power.md).
+
+| Config field | Details                                                                                     | Examples                                     |
+| ------------ | ------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| `colours`    | Colour of each power channel's graph line. Read in channel order: system, CPU, GPU, ANE, RAM. | `colours = ["Red", "Blue", "Green"]`        |
+
 #### Memory
 
 These can be set under `[styles.memory]`:

@@ -12,7 +12,7 @@ use timeless::data::ChunkedData;
 use crate::{
     app::{AppConfigFields, DataFilters, filter::Filter, layout_manager::UsedWidgets},
     collection::Data,
-    widgets::DiskWidgetData,
+    widgets::{DiskWidgetData, PowerChannel},
 };
 
 /// Values corresponding to a time slice.
@@ -72,6 +72,16 @@ pub struct TimeSeriesData {
 
     /// Disk I/O write rate data, keyed by device name.
     pub disk_io_write: HashMap<String, ChunkedData<f64>>,
+
+    /// Power draw in Watts, keyed by [`PowerChannel::label`].
+    pub power: HashMap<String, Values>,
+
+    /// Channels that have reported a nonzero reading at least once this run.
+    ///
+    /// Not every chip wires up every rail -- an M4 reports a constant `0.0` for CPU, ANE,
+    /// and RAM. Tracking it here costs one lookup per sample, which beats rescanning every
+    /// series on every frame just to decide what to draw.
+    pub power_reported: HashSet<String>,
 }
 
 impl TimeSeriesData {
@@ -279,6 +289,34 @@ impl TimeSeriesData {
         }
     }
 
+    /// Update the power time series from a fresh sample.
+    ///
+    /// A channel the machine did not report gets a break inserted rather than a zero, so a
+    /// gap reads as a gap instead of as an idle rail.
+    pub fn update_power(&mut self, power: Option<&crate::collection::power::PowerData>) {
+        let Some(power) = power else {
+            for entry in self.power.values_mut() {
+                entry.insert_break();
+            }
+            return;
+        };
+
+        for channel in PowerChannel::ALL {
+            let entry = self.power.entry(channel.label().to_owned()).or_default();
+
+            match channel.watts(power) {
+                Some(watts) => {
+                    entry.push(f64::from(watts));
+
+                    if watts > 0.0 && !self.power_reported.contains(channel.label()) {
+                        self.power_reported.insert(channel.label().to_owned());
+                    }
+                }
+                None => entry.insert_break(),
+            }
+        }
+    }
+
     /// Prune any data older than the given duration.
     pub fn prune(&mut self, max_age: Duration) {
         if self.time.is_empty() {
@@ -364,6 +402,20 @@ impl TimeSeriesData {
         });
 
         self.disk_io_write.retain(|_, data| {
+            let _ = data.prune(end);
+
+            if data.no_elements() {
+                false
+            } else {
+                data.shrink_to_fit();
+                true
+            }
+        });
+
+        // `power_reported` is deliberately *not* pruned alongside this. It records whether
+        // the hardware has a rail at all, which does not stop being true when the window
+        // scrolls past the last nonzero reading.
+        self.power.retain(|_, data| {
             let _ = data.prune(end);
 
             if data.no_elements() {
