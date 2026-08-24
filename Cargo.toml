@@ -1,3 +1,9 @@
+# NOTE(redd): `mon` is a fork of bottom. This `[workspace]` block, the `crates/` member,
+# and the `mon` binary name are the only additions to upstream's manifest header -- keeping
+# `[package] name = "bottom"` intact is deliberate so rebases onto upstream stay clean.
+[workspace]
+members = ["crates/claude-metrics"]
+
 [package]
 name = "bottom"
 version = "0.14.8"
@@ -6,7 +12,7 @@ license = "MIT"
 description = "A customizable cross-platform graphical process/system monitor for the terminal. Supports Linux, macOS, and Windows."
 documentation = "https://bottom.pages.dev/stable"
 readme = "README.md"
-default-run = "btm"
+default-run = "mon"
 build = "build.rs"
 authors = ["Clement Tsang <cjhtsang@uwaterloo.ca>"]
 keywords = ["cross-platform", "monitoring", "cli", "top", "tui"]
@@ -48,7 +54,7 @@ doctest = true
 doc = true
 
 [[bin]]
-name = "btm"
+name = "mon"
 path = "src/bin/main.rs"
 doc = false
 
@@ -164,32 +170,32 @@ strip = false
 section = "utility"
 assets = [
     [
-        "target/release/btm",
+        "target/release/mon",
         "usr/bin/",
         "755",
     ],
     [
         "LICENSE",
-        "usr/share/doc/btm/",
+        "usr/share/doc/mon/",
         "644",
     ],
     [
-        "manpage/btm.1.gz",
-        "usr/share/man/man1/btm.1.gz",
+        "manpage/mon.1.gz",
+        "usr/share/man/man1/mon.1.gz",
         "644",
     ],
     [
-        "completion/btm.bash",
-        "usr/share/bash-completion/completions/btm",
+        "completion/mon.bash",
+        "usr/share/bash-completion/completions/mon",
         "644",
     ],
     [
-        "completion/btm.fish",
-        "usr/share/fish/vendor_completions.d/btm.fish",
+        "completion/mon.fish",
+        "usr/share/fish/vendor_completions.d/mon.fish",
         "644",
     ],
     [
-        "completion/_btm",
+        "completion/_mon",
         "usr/share/zsh/vendor-completions/",
         "644",
     ],
@@ -204,7 +210,7 @@ assets = [
         "644",
     ],
 ]
-conflicts = "btm"
+conflicts = "mon"
 extended-description = """
 
 By default, bottom will look for a config file in ~/.config/bottom/bottom.toml. A config file can be specified \
@@ -224,12 +230,12 @@ product-icon = "assets/icons/bottom.ico"
 
 [package.metadata.generate-rpm]
 assets = [
-    { source = "target/release/btm", dest = "/usr/bin/", mode = "755" },
-    { source = "LICENSE", dest = "/usr/share/doc/btm/", mode = "644" },
-    { source = "manpage/btm.1.gz", dest = "/usr/share/man/man1/btm.1.gz", mode = "644", doc = true },
-    { source = "completion/btm.bash", dest = "/usr/share/bash-completion/completions/btm", mode = "644" },
-    { source = "completion/btm.fish", dest = "/usr/share/fish/vendor_completions.d/btm.fish", mode = "644" },
-    { source = "completion/_btm", dest = "/usr/share/zsh/vendor-completions/", mode = "644" },
+    { source = "target/release/mon", dest = "/usr/bin/", mode = "755" },
+    { source = "LICENSE", dest = "/usr/share/doc/mon/", mode = "644" },
+    { source = "manpage/mon.1.gz", dest = "/usr/share/man/man1/mon.1.gz", mode = "644", doc = true },
+    { source = "completion/mon.bash", dest = "/usr/share/bash-completion/completions/mon", mode = "644" },
+    { source = "completion/mon.fish", dest = "/usr/share/fish/vendor_completions.d/mon.fish", mode = "644" },
+    { source = "completion/_mon", dest = "/usr/share/zsh/vendor-completions/", mode = "644" },
     { source = "desktop/bottom.desktop", dest = "/usr/share/applications/bottom.desktop", mode = "644" },
     { source = "assets/icons/bottom-system-monitor.svg", dest = "/usr/share/icons/hicolor/scalable/apps/bottom-system-monitor.svg", mode = "644" },
 ]

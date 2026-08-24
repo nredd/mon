@@ -33,10 +33,10 @@ fn generate_completions<G>(to_generate: G, cmd: &mut Command, out_dir: &Path) ->
 where
     G: Generator,
 {
-    generate_to(to_generate, cmd, "btm", out_dir)
+    generate_to(to_generate, cmd, "mon", out_dir)
 }
 
-fn btm_generate() -> io::Result<()> {
+fn mon_generate() -> io::Result<()> {
     const ENV_KEY: &str = "BTM_GENERATE";
 
     match env::var_os(ENV_KEY) {
@@ -62,11 +62,11 @@ fn btm_generate() -> io::Result<()> {
             generate_completions(Nushell, &mut app, &completion_out_dir)?;
 
             // Generate manpage
-            let app = app.name("btm");
+            let app = app.name("mon");
             let man = clap_mangen::Man::new(app);
             let mut buffer: Vec<u8> = Default::default();
             man.render(&mut buffer)?;
-            fs::write(manpage_out_dir.join("btm.1"), buffer)?;
+            fs::write(manpage_out_dir.join("mon.1"), buffer)?;
         }
         _ => {}
     }
@@ -111,7 +111,7 @@ fn nightly_version() {
 }
 
 fn main() -> io::Result<()> {
-    btm_generate()?;
+    mon_generate()?;
     nightly_version();
 
     Ok(())

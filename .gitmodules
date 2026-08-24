@@ -1,0 +1,3 @@
+[submodule "vendor/macmon"]
+	path = vendor/macmon
+	url = https://github.com/vladkens/macmon.git

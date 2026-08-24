@@ -6,7 +6,7 @@ use std::{io::Write, path::Path};
 
 use predicates::prelude::*;
 
-use crate::util::{btm_command, spawn_btm_in_pty};
+use crate::util::{mon_command, spawn_mon_in_pty};
 
 fn reader_to_string(mut reader: Box<dyn Read>) -> String {
     let mut buf = String::default();
@@ -16,7 +16,7 @@ fn reader_to_string(mut reader: Box<dyn Read>) -> String {
 }
 
 fn run_and_kill(args: &[&str]) {
-    let (master, mut handle) = spawn_btm_in_pty(args);
+    let (master, mut handle) = spawn_mon_in_pty(args);
     let reader = master.try_clone_reader().unwrap();
     let _ = master.take_writer().unwrap();
 
@@ -287,7 +287,7 @@ fn test_deprecated_temperature() {
 /// even when a `[flags]` section is present.
 #[test]
 fn test_no_spurious_deprecated_warnings() {
-    let mut child = btm_command(&["-C", "./tests/valid_configs/empty_flags.toml"])
+    let mut child = mon_command(&["-C", "./tests/valid_configs/empty_flags.toml"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()

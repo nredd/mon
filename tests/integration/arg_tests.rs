@@ -4,11 +4,11 @@
 use assert_cmd::prelude::*;
 use predicates::prelude::*;
 
-use crate::util::{btm_command, no_cfg_btm_command};
+use crate::util::{mon_command, no_cfg_mon_command};
 
 #[test]
 fn test_small_rate() {
-    btm_command(&["-C", "./tests/valid_configs/empty_config.toml"])
+    mon_command(&["-C", "./tests/valid_configs/empty_config.toml"])
         .arg("-r")
         .arg("249")
         .assert()
@@ -18,7 +18,7 @@ fn test_small_rate() {
 
 #[test]
 fn test_large_default_time() {
-    no_cfg_btm_command()
+    no_cfg_mon_command()
         .arg("-t")
         .arg("18446744073709551616")
         .assert()
@@ -30,7 +30,7 @@ fn test_large_default_time() {
 
 #[test]
 fn test_small_default_time() {
-    no_cfg_btm_command()
+    no_cfg_mon_command()
         .arg("-t")
         .arg("900")
         .assert()
@@ -42,7 +42,7 @@ fn test_small_default_time() {
 
 #[test]
 fn test_large_delta_time() {
-    no_cfg_btm_command()
+    no_cfg_mon_command()
         .arg("-d")
         .arg("18446744073709551616")
         .assert()
@@ -54,7 +54,7 @@ fn test_large_delta_time() {
 
 #[test]
 fn test_small_delta_time() {
-    no_cfg_btm_command()
+    no_cfg_mon_command()
         .arg("-d")
         .arg("900")
         .assert()
@@ -64,7 +64,7 @@ fn test_small_delta_time() {
 
 #[test]
 fn test_large_rate() {
-    no_cfg_btm_command()
+    no_cfg_mon_command()
         .arg("-r")
         .arg("18446744073709551616")
         .assert()
@@ -77,7 +77,7 @@ fn test_large_rate() {
 #[test]
 fn test_negative_rate() {
     // This test should auto fail due to how clap works
-    no_cfg_btm_command()
+    no_cfg_mon_command()
         .arg("-r")
         .arg("-1000")
         .assert()
@@ -87,7 +87,7 @@ fn test_negative_rate() {
 
 #[test]
 fn test_invalid_rate() {
-    no_cfg_btm_command()
+    no_cfg_mon_command()
         .arg("-r")
         .arg("100-1000")
         .assert()
@@ -99,7 +99,7 @@ fn test_invalid_rate() {
 
 #[test]
 fn test_conflicting_temps() {
-    no_cfg_btm_command()
+    no_cfg_mon_command()
         .arg("-c")
         .arg("-f")
         .assert()
@@ -109,7 +109,7 @@ fn test_conflicting_temps() {
 
 #[test]
 fn test_invalid_default_widget_1() {
-    no_cfg_btm_command()
+    no_cfg_mon_command()
         .arg("--default_widget_type")
         .arg("fake_widget")
         .assert()
@@ -119,7 +119,7 @@ fn test_invalid_default_widget_1() {
 
 #[test]
 fn test_invalid_default_widget_2() {
-    no_cfg_btm_command()
+    no_cfg_mon_command()
         .arg("--default_widget_type")
         .arg("cpu")
         .arg("--default_widget_count")
@@ -131,7 +131,7 @@ fn test_invalid_default_widget_2() {
 
 #[test]
 fn test_missing_default_widget_type() {
-    no_cfg_btm_command()
+    no_cfg_mon_command()
         .arg("--default_widget_count")
         .arg("3")
         .assert()
@@ -143,7 +143,7 @@ fn test_missing_default_widget_type() {
 
 #[test]
 fn test_invalid_default_cpu_entry() {
-    no_cfg_btm_command()
+    no_cfg_mon_command()
         .arg("--default_cpu_entry")
         .arg("invalid")
         .assert()
@@ -154,7 +154,7 @@ fn test_invalid_default_cpu_entry() {
 #[test]
 #[cfg_attr(feature = "battery", ignore)]
 fn test_battery_flag() {
-    no_cfg_btm_command()
+    no_cfg_mon_command()
         .arg("--battery")
         .assert()
         .failure()
@@ -166,7 +166,7 @@ fn test_battery_flag() {
 #[test]
 #[cfg_attr(feature = "gpu", ignore)]
 fn test_gpu_flag() {
-    no_cfg_btm_command()
+    no_cfg_mon_command()
         .arg("--disable_gpu")
         .assert()
         .failure()
@@ -178,13 +178,13 @@ fn test_gpu_flag() {
 /// Sanity test due to <https://github.com/ClementTsang/bottom/pull/1478>.
 #[test]
 fn test_version() {
-    btm_command(&["--version"]).assert().success();
-    btm_command(&["-V"]).assert().success();
+    mon_command(&["--version"]).assert().success();
+    mon_command(&["-V"]).assert().success();
 }
 
 /// Sanity test due to <https://github.com/ClementTsang/bottom/pull/1478>.
 #[test]
 fn test_help() {
-    btm_command(&["--help"]).assert().success();
-    btm_command(&["-h"]).assert().success();
+    mon_command(&["--help"]).assert().success();
+    mon_command(&["-h"]).assert().success();
 }

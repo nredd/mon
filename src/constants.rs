@@ -98,7 +98,7 @@ const SEARCH_HELP_TEXT: [&str; 53] = [
     "Right, Alt-l            Move cursor right",
     "",
     "Supported search types:",
-    "<by name/cmd>           ex: btm",
+    "<by name/cmd>           ex: mon",
     "pid                     ex: pid 825",
     "cpu, cpu%               ex: cpu > 4.2",
     "mem, mem%               ex: mem < 4.2",
@@ -122,9 +122,9 @@ const SEARCH_HELP_TEXT: [&str; 53] = [
     "<=                      ex: cpu <= 1",
     "",
     "Logical operators:",
-    "and, &&, <Space>        ex: btm and cpu > 1 and mem > 1",
-    "or, ||                  ex: btm or firefox",
-    "!                       ex: !firefox, !(cpu > 5 or btm)",
+    "and, &&, <Space>        ex: mon and cpu > 1 and mem > 1",
+    "or, ||                  ex: mon or firefox",
+    "!                       ex: !firefox, !(cpu > 5 or mon)",
     "",
     "Supported units:",
     "B                       ex: read > 1 b",
@@ -252,7 +252,7 @@ pub(crate) const CONFIG_TEXT: &str = r#"# This is a default config file for bott
 # fit.
 
 # This group of options represents a command-line option. Flags explicitly
-# added when running (ie: btm -a) will override this config file if an option
+# added when running (ie: mon -a) will override this config file if an option
 # is also set here.
 #[flags]
 # Deprecated - use cpu.hide_avg_cpu.

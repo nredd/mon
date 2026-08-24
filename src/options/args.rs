@@ -21,7 +21,7 @@ const TEMPLATE: &str = indoc! {
     {all-args}"
 };
 
-const USAGE: &str = "btm [OPTIONS]";
+const USAGE: &str = "mon [OPTIONS]";
 
 // Can't use an unwrap here at the moment since it's const.
 const VERSION: &str = match option_env!("NIGHTLY_VERSION") {
@@ -44,7 +44,7 @@ const CHART_WIDGET_POSITIONS: [&str; 9] = [
 /// Represents the arguments that can be passed in to bottom.
 #[derive(Parser, Debug)]
 #[command(
-    name = crate_name!(),
+    name = "mon",
     version = VERSION,
     author = crate_authors!(),
     about = crate_description!(),

@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# The single gate. Mirrors .github/workflows/ci.yml so a green run here means a green CI.
+#
+# Never bypass this with --no-verify. If the gate is wrong, fix the gate and say so.
+set -euo pipefail
+
+step() { printf '\n\033[36m==> %s\033[0m\n' "$*"; }
+
+step "cargo fmt --all -- --check"
+cargo fmt --all -- --check
+
+# NOTE(redd): plain `-D warnings`, not `-W clippy::pedantic`. Upstream bottom is not
+# pedantic-clean and never claimed to be, so a workspace-wide pedantic run buries real
+# findings under thousands of upstream nits. Pedantic is enabled per-crate instead, in
+# `crates/claude-metrics/Cargo.toml`.
+step "cargo clippy --all-targets --all-features --workspace -- -D warnings"
+cargo clippy --all-targets --all-features --workspace -- -D warnings
+
+step "cargo nextest run --all-features --workspace"
+cargo nextest run --all-features --workspace
+
+step "cargo doc --no-deps --all-features --workspace"
+RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features --workspace
+
+printf '\n\033[32m==> smoke clean\033[0m\n'

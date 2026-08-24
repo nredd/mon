@@ -68,19 +68,19 @@ fn cross_runner() -> Option<String> {
     }
 }
 
-const BTM_EXE_PATH: &str = env!("CARGO_BIN_EXE_btm");
+const MON_EXE_PATH: &str = env!("CARGO_BIN_EXE_mon");
 const RUNNER_ENV_VARS: [(&str, &str); 1] = [("NO_COLOR", "1")];
 const DEFAULT_CFG: [&str; 2] = ["-C", "./tests/valid_configs/empty_config.toml"];
 
 /// Returns the [`Command`] of a binary invocation of bottom, alongside
 /// any required env variables.
-pub fn btm_command(args: &[&str]) -> Command {
+pub fn mon_command(args: &[&str]) -> Command {
     let mut cmd = match cross_runner() {
-        None => Command::new(BTM_EXE_PATH),
+        None => Command::new(MON_EXE_PATH),
         Some(runner) => {
             let mut cmd = Command::new(runner);
             cmd.envs(RUNNER_ENV_VARS);
-            cmd.arg(BTM_EXE_PATH);
+            cmd.arg(MON_EXE_PATH);
             cmd
         }
     };
@@ -102,13 +102,13 @@ pub fn btm_command(args: &[&str]) -> Command {
 
 /// Returns the [`Command`] of a binary invocation of bottom, alongside
 /// any required env variables, and with the default, empty config file.
-pub fn no_cfg_btm_command() -> Command {
-    btm_command(&DEFAULT_CFG)
+pub fn no_cfg_mon_command() -> Command {
+    mon_command(&DEFAULT_CFG)
 }
 
-/// Spawns `btm` in a pty, returning the pair alongside a handle to the child.
+/// Spawns `mon` in a pty, returning the pair alongside a handle to the child.
 #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
-pub fn spawn_btm_in_pty(args: &[&str]) -> (Box<dyn MasterPty>, Box<dyn Child>) {
+pub fn spawn_mon_in_pty(args: &[&str]) -> (Box<dyn MasterPty>, Box<dyn Child>) {
     let native_pty = native_pty_system();
 
     let pair = native_pty
@@ -120,15 +120,15 @@ pub fn spawn_btm_in_pty(args: &[&str]) -> (Box<dyn MasterPty>, Box<dyn Child>) {
         })
         .unwrap();
 
-    let btm_exe = BTM_EXE_PATH;
+    let mon_exe = MON_EXE_PATH;
     let mut cmd = match cross_runner() {
-        None => CommandBuilder::new(btm_exe),
+        None => CommandBuilder::new(mon_exe),
         Some(runner) => {
             let mut cmd = CommandBuilder::new(runner);
             for (env, val) in RUNNER_ENV_VARS {
                 cmd.env(env, val);
             }
-            cmd.arg(BTM_EXE_PATH);
+            cmd.arg(MON_EXE_PATH);
 
             cmd
         }

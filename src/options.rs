@@ -1515,7 +1515,7 @@ mod test {
         let config = Config::default();
 
         {
-            let delta_args = vec!["btm", "--time_delta", "2 min"];
+            let delta_args = vec!["mon", "--time_delta", "2 min"];
             let args = BottomArgs::parse_from(delta_args);
 
             assert_eq!(
@@ -1525,7 +1525,7 @@ mod test {
         }
 
         {
-            let default_time_args = vec!["btm", "--default_time_value", "300s"];
+            let default_time_args = vec!["mon", "--default_time_value", "300s"];
             let args = BottomArgs::parse_from(default_time_args);
 
             assert_eq!(
@@ -1540,7 +1540,7 @@ mod test {
         let config = Config::default();
 
         {
-            let delta_args = vec!["btm", "--time_delta", "120000"];
+            let delta_args = vec!["mon", "--time_delta", "120000"];
             let args = BottomArgs::parse_from(delta_args);
 
             assert_eq!(
@@ -1550,7 +1550,7 @@ mod test {
         }
 
         {
-            let default_time_args = vec!["btm", "--default_time_value", "300000"];
+            let default_time_args = vec!["mon", "--default_time_value", "300000"];
             let args = BottomArgs::parse_from(default_time_args);
 
             assert_eq!(
@@ -1562,7 +1562,7 @@ mod test {
 
     #[test]
     fn config_human_times() {
-        let args = BottomArgs::parse_from(["btm"]);
+        let args = BottomArgs::parse_from(["mon"]);
 
         let mut config = Config::default();
         let flags = GeneralConfig {
@@ -1592,7 +1592,7 @@ mod test {
 
     #[test]
     fn config_number_times_as_string() {
-        let args = BottomArgs::parse_from(["btm"]);
+        let args = BottomArgs::parse_from(["mon"]);
 
         let mut config = Config::default();
         let flags = GeneralConfig {
@@ -1622,7 +1622,7 @@ mod test {
 
     #[test]
     fn config_number_times_as_num() {
-        let args = BottomArgs::parse_from(["btm"]);
+        let args = BottomArgs::parse_from(["mon"]);
 
         let mut config = Config::default();
         let flags = GeneralConfig {
@@ -1662,7 +1662,7 @@ mod test {
     fn verify_cli_options_build() {
         let app = crate::args::build_cmd();
 
-        let default_app = create_app(BottomArgs::parse_from(["btm"]));
+        let default_app = create_app(BottomArgs::parse_from(["mon"]));
 
         // Skip battery since it's tricky to test depending on the platform/features
         // we're testing with.
@@ -1679,7 +1679,7 @@ mod test {
             if !arg.get_action().takes_values() && !skip.contains(&arg_name) {
                 let arg = format!("--{arg_name}");
 
-                let arguments = vec!["btm", &arg];
+                let arguments = vec!["mon", &arg];
                 let args = BottomArgs::parse_from(arguments);
                 let testing_app = create_app(args);
 

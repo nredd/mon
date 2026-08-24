@@ -1,0 +1,25 @@
+mon
+===
+
+`mon` is a fork of bottom by Clement Tsang.
+
+  Upstream:  https://github.com/ClementTsang/bottom
+  License:   MIT, Copyright (c) 2019 Clement Tsang -- see LICENSE
+
+The vast majority of this codebase is upstream's work, unmodified. LICENSE is upstream's
+MIT notice and is kept verbatim.
+
+What this fork adds:
+
+- An Apple Silicon power widget, sampled via macmon (https://github.com/vladkens/macmon,
+  MIT, Copyright (c) 2024 vladkens). Vendored read-only at `vendor/macmon` as a reference;
+  the dependency itself comes from crates.io
+- A Claude Code metrics widget, backed by the `claude-metrics` workspace crate
+- A configurable graph marker, replacing upstream's hardcoded braille/dot pair. This
+  resolves upstream's own TODO in `src/options/args.rs`
+- An opt-in pixel rendering path over the Kitty graphics protocol
+
+The binary is named `mon`; the crate is still named `bottom` so rebases onto upstream
+stay clean. `git remote get-url upstream` points at the source repository.
+
+Issues with the shared code belong upstream, not here.

@@ -1,5 +1,5 @@
 <div align="center">
-  <h1>bottom (btm)</h1>
+  <h1>mon</h1>
 
   <p>
     A customizable cross-platform graphical process/system monitor for the terminal.<br />Supports Linux, macOS, and Windows. Inspired by <a href=https://github.com/aksakalli/gtop>gtop</a>, <a href=https://github.com/xxxserxxx/gotop>gotop</a>, and <a href=https://github.com/htop-dev/htop>htop</a>.
@@ -21,6 +21,11 @@
     </sub>
   </p>
 </div>
+
+> **This is a fork.** `mon` is [bottom](https://github.com/ClementTsang/bottom) plus an
+> Apple Silicon power widget, live Claude Code metrics, a configurable graph marker, and an
+> opt-in Kitty-graphics pixel rendering path. Everything below is upstream's documentation
+> and still applies -- the binary is just named `mon` instead of `btm`. See `NOTICE`.
 
 ## Table of contents <!-- omit in toc -->
 
@@ -429,7 +434,7 @@ You can also use the pre-built release binaries:
 To use, download and extract the binary that matches your system. You can then run by doing:
 
 ```bash
-./btm
+./mon
 ```
 
 or by installing to your system following the procedures for installing binaries to your system.
@@ -439,21 +444,21 @@ or by installing to your system following the procedures for installing binaries
 The release binaries in [the releases page](https://github.com/ClementTsang/bottom/releases) are packaged with
 shell auto-completion files for Bash, Zsh, fish, Powershell, Elvish, Fig, and Nushell. To install them:
 
-- For Bash, move `btm.bash` to `$XDG_CONFIG_HOME/bash_completion or /etc/bash_completion.d/`.
-- For Zsh, move `_btm` to one of your `$fpath` directories.
-- For fish, move `btm.fish` to `$HOME/.config/fish/completions/`.
-- For PowerShell, add `_btm.ps1` to your PowerShell [profile](<https://docs.microsoft.com/en-us/previous-versions//bb613488(v=vs.85)>).
-- For Elvish, the completion file is `btm.elv`.
-- For Fig, the completion file is `btm.ts`.
-- For Nushell, use `btm.nu`.
+- For Bash, move `mon.bash` to `$XDG_CONFIG_HOME/bash_completion or /etc/bash_completion.d/`.
+- For Zsh, move `_mon` to one of your `$fpath` directories.
+- For fish, move `mon.fish` to `$HOME/.config/fish/completions/`.
+- For PowerShell, add `_mon.ps1` to your PowerShell [profile](<https://docs.microsoft.com/en-us/previous-versions//bb613488(v=vs.85)>).
+- For Elvish, the completion file is `mon.elv`.
+- For Fig, the completion file is `mon.ts`.
+- For Nushell, use `mon.nu`.
 
 The individual auto-completion files are also included in the stable/nightly releases as `completion.tar.gz` if needed.
 
 ## Usage
 
-You can run bottom using `btm`.
+You can run it using `mon`.
 
-- For help on flags, use `btm -h` for a quick overview or `btm --help` for more details.
+- For help on flags, use `mon -h` for a quick overview or `mon --help` for more details.
 - For info on key and mouse bindings, press `?` inside bottom or refer to the [documentation page](https://bottom.pages.dev/nightly/).
 
 You can find more information on usage in the [documentation](https://bottom.pages.dev/nightly/).

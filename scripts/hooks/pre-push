@@ -1,11 +1,6 @@
 #!/bin/sh
-
+# Runs the full gate before every push. Never bypass with --no-verify -- if the gate is
+# wrong, fix scripts/smoke and say so.
 set -e
 
-echo "Running pre-push hook:"
-
-echo "Executing: cargo fmt --all -- --check"
-cargo fmt --all -- --check
-
-echo "Executing: cargo clippy --all-targets --workspace -- -D warnings"
-cargo clippy --all-targets --workspace -- -D warnings
+exec ./scripts/smoke
