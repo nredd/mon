@@ -75,9 +75,17 @@ own `TODO` in `options/args.rs`. `--dot_marker` still works and still means `--m
 `--pixel_graphs kitty` draws graphs as real pixels rather than cell markers, worth roughly
 an order of magnitude more vertical resolution on a short graph.
 
-The image covers the data region only; the border and both sets of axis labels are still
-drawn as text, so it reuses the chart's own axis geometry. If encoding fails the cell-drawn
-graph underneath stays visible.
+The image covers the data region only, and goes down *first* -- the border, both sets of
+axis labels, and the legend are ordinary text drawn on top of it afterwards, which is how
+they reclaim their own cells. The region is the chart's own `graph_area`, asked for rather
+than re-derived: the Kitty renderer packs an entire row's escape sequence into that row's
+first cell, so overlapping the y-axis by one column does not cost a column, it erases the
+whole image. If encoding fails the chart falls back to drawing its usual cell-marker line.
+
+The rasteriser's background is keyed out to fully transparent, so the terminal's real
+background glows through under the line exactly as it does everywhere else in the UI. bottom
+never paints a background of its own, so there is no true colour to ask for -- keying it out
+is what keeps the widget theme-neutral rather than stamping a guessed rectangle on screen.
 
 Use `kitty` rather than `auto` under tmux. Measured on Ghostty 1.3.1 + tmux 3.7c: the Kitty
 capability query gets no reply through tmux's passthrough, even though the image transport

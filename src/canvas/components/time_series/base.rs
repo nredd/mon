@@ -151,34 +151,14 @@ impl TimeGraph<'_> {
             )
     }
 
-    /// Draws a time graph at [`Rect`] location provided by `draw_loc`. A time
-    /// graph is used to display data points throughout time in the x-axis.
+    /// Assemble the chart around a ready-made set of datasets.
     ///
-    /// This time graph:
-    /// - Draws with the higher time value on the left, and lower on the right.
-    /// - Expects a [`TimeGraph`] to be passed in, which details how to draw the
-    ///   graph.
-    /// - Expects `graph_data`, which represents *what* data to draw, and
-    ///   various details like style and optional legends.
-    pub fn draw<F: Copy + Default + Into<f64>>(
-        &self, f: &mut Frame<'_>, draw_loc: Rect, graph_data: Vec<GraphData<'_, F>>,
-        mut pixels: Option<PixelDraw<'_>>,
-    ) {
-        // TODO: (points_rework_v1) can we reduce allocations in the underlying graph by
-        // saving some sort of state?
-
-        let x_axis = self.generate_x_axis();
-        let y_axis = self.generate_y_axis();
-
-        // Rasterise *before* consuming `graph_data` into datasets. The cell-drawn chart is
-        // still rendered underneath, so a pixel path that cannot encode degrades to the
-        // normal graph rather than to nothing.
-        let pixel_area = pixels
-            .as_mut()
-            .and_then(|p| p.render(f, draw_loc, &graph_data, self));
-
-        let data = graph_data.into_iter().map(create_dataset).collect();
-
+    /// Split out because `draw` builds the chart twice in the fallback case: once as a
+    /// layout probe before the pixel path runs, and again with real point data if that path
+    /// declined to draw.
+    fn build_chart<'d, F: Copy + Default + Into<f64>>(
+        &'d self, data: Vec<Dataset<'d, F>>,
+    ) -> TimeChart<'d, F> {
         let block = {
             let mut b = widget_block(
                 false,
@@ -196,34 +176,100 @@ impl TimeGraph<'_> {
             b
         };
 
-        f.render_widget(
-            TimeChart::new(data)
-                .block(block)
-                .x_axis(x_axis)
-                .y_axis(y_axis)
-                .marker(self.marker)
-                .style(self.general_widget_style)
-                .legend_style(self.graph_style)
-                .legend_position(self.legend_position)
-                .hidden_legend_constraints({
-                    let constraints = self
-                        .legend_constraints
-                        .unwrap_or(DEFAULT_LEGEND_CONSTRAINTS);
+        TimeChart::new(data)
+            .block(block)
+            .x_axis(self.generate_x_axis())
+            .y_axis(self.generate_y_axis())
+            .marker(self.marker)
+            .style(self.general_widget_style)
+            .legend_style(self.graph_style)
+            .legend_position(self.legend_position)
+            .hidden_legend_constraints({
+                let constraints = self
+                    .legend_constraints
+                    .unwrap_or(DEFAULT_LEGEND_CONSTRAINTS);
 
-                    (constraints.width, constraints.height)
-                })
-                .scaling(self.scaling),
-            draw_loc,
-        );
+                (constraints.width, constraints.height)
+            })
+            .scaling(self.scaling)
+    }
 
-        // Painted last so it sits over the cell-drawn lines rather than under them.
-        if let Some((area, renderer, rgba, size)) = pixel_area {
-            renderer.draw(f, area, rgba, size);
+    /// Draws a time graph at [`Rect`] location provided by `draw_loc`. A time
+    /// graph is used to display data points throughout time in the x-axis.
+    ///
+    /// This time graph:
+    /// - Draws with the higher time value on the left, and lower on the right.
+    /// - Expects a [`TimeGraph`] to be passed in, which details how to draw the
+    ///   graph.
+    /// - Expects `graph_data`, which represents *what* data to draw, and
+    ///   various details like style and optional legends.
+    pub fn draw<F: Copy + Default + Into<f64>>(
+        &self, f: &mut Frame<'_>, draw_loc: Rect, graph_data: Vec<GraphData<'_, F>>,
+        mut pixels: Option<PixelDraw<'_>>,
+    ) {
+        // TODO: (points_rework_v1) can we reduce allocations in the underlying graph by
+        // saving some sort of state?
+
+        // Build the chart from legend-only datasets *first*, purely so its own `layout()`
+        // can be asked where the plot area actually is. The pixel path must land on exactly
+        // those cells: the chart reserves a y-axis column and an x-axis row that a naive
+        // "inside the border, past the labels" calculation does not know about, and being
+        // one column off puts the image's first cell -- which carries that whole row's
+        // escape sequence -- under the y-axis line, which the chart then overwrites, wiping
+        // every row of the image. See `TimeChart::graph_rect`.
+        //
+        // Legend-only is the right probe because `graph_area` does not depend on the
+        // datasets at all, and `legend_area` depends only on their names and count, which
+        // the legend-only datasets carry verbatim.
+        let chart = self.build_chart(graph_data.iter().map(create_legend_only_dataset).collect());
+
+        // `pixel_drawn` reflects whether the image is actually now sitting in the frame
+        // buffer -- rasterising successfully is not enough, encoding to the terminal's
+        // protocol can still fail on a degenerate size, and the fallback decision below
+        // depends on the *placed* outcome rather than on any earlier step having gone well.
+        let pixel_drawn = match (pixels.as_mut(), chart.graph_rect(draw_loc)) {
+            (Some(pixels), Some(area)) => pixels.render_and_draw(f, area, &graph_data, self),
+            _ => false,
+        };
+
+        // The image goes down *underneath* -- the chart draws its border, axis labels, and
+        // legend as ordinary text on top of it in the normal course of rendering, which
+        // reclaims those specific cells without any special-casing here. A successful pixel
+        // draw also means the chart must not draw its own cell-marker line: it would be
+        // redundant, and it would poke through the pixel image wherever a line cell falls.
+        // That is what the legend-only datasets above already give us, so the chart only
+        // needs rebuilding when the pixel path did *not* end up drawing.
+        let chart = if pixel_drawn {
+            chart
+        } else {
+            drop(chart);
+            self.build_chart(graph_data.iter().map(create_dataset).collect())
+        };
+
+        // The image, if one was drawn, marked its cells `CellDiffOption::Skip` so ratatui's
+        // diff engine leaves them alone next frame -- but the legend this chart is about to
+        // draw over that same image is a plain `set_symbol` call that never clears the flag.
+        // Get the rect before the chart is consumed by `render_widget` below.
+        let legend_rect = pixel_drawn.then(|| chart.legend_rect(draw_loc)).flatten();
+
+        f.render_widget(chart, draw_loc);
+
+        // Now that the legend has legitimately overwritten those cells, let the diff engine
+        // see the change: without this, the legend never reaches the terminal, because the
+        // engine skips any cell still flagged from the image draw regardless of its content.
+        if let Some(rect) = legend_rect {
+            let buf = f.buffer_mut();
+            for y in rect.top()..rect.bottom() {
+                for x in rect.left()..rect.right() {
+                    if let Some(cell) = buf.cell_mut((x, y)) {
+                        cell.set_diff_option(ratatui::buffer::CellDiffOption::None);
+                    }
+                }
+            }
         }
     }
 }
 
-/// Creates a new [`Dataset`].
 /// Everything the pixel path needs to rasterise one graph, borrowed for the frame.
 pub(crate) struct PixelDraw<'a> {
     /// The terminal graphics renderer. `None` disables the path.
@@ -237,20 +283,38 @@ pub(crate) struct PixelDraw<'a> {
 }
 
 impl PixelDraw<'_> {
-    /// Work out the plot area, rasterise into it, and hand back what to draw where.
+    /// Rasterise into `area` and place the resulting image in the frame.
     ///
-    /// Returns `None` when the pixel path is off, unusable, or the area is too small to be
-    /// worth it -- in every case the caller just leaves the cell-drawn graph alone.
-    fn render<'c, F: Copy + Default + Into<f64>>(
-        &'c mut self, _f: &mut Frame<'_>, draw_loc: Rect, graph_data: &[GraphData<'_, F>],
+    /// `area` must be the chart's own `graph_area` -- see `TimeChart::graph_rect`. Nothing
+    /// here re-derives it, because the one time it did, it landed a column left of the real
+    /// plot area and the chart's y-axis line erased the image on every row.
+    ///
+    /// Returns whether the image is actually now sitting in the frame buffer. This has to
+    /// be a real yes/no on the *placed* outcome, not on rasterisation alone: rasterising an
+    /// RGBA buffer can succeed while the subsequent terminal-protocol encode still fails on
+    /// a degenerate size, and the caller uses this return value to decide whether the chart
+    /// needs to fall back to drawing its own cell-marker line.
+    ///
+    /// Draws the image *before* the caller draws the surrounding chart, so the chart's own
+    /// border, axis labels, and legend -- ordinary text, drawn afterward in the normal
+    /// course of rendering -- naturally overwrite their own cells and need no special
+    /// handling here to avoid being erased by the image.
+    fn render_and_draw<F: Copy + Default + Into<f64>>(
+        &mut self, f: &mut Frame<'_>, area: Rect, graph_data: &[GraphData<'_, F>],
         graph: &TimeGraph<'_>,
-    ) -> Option<(Rect, &'c PixelRenderer, &'c [u8], (u32, u32))> {
+    ) -> bool {
         if !self.renderer.is_active() {
-            return None;
+            return false;
         }
 
-        let last_time = self.last_time?;
-        let area = plot_area(draw_loc, graph)?;
+        let Some(last_time) = self.last_time else {
+            return false;
+        };
+
+        // Below this there is nothing an image buys over cell markers.
+        if area.width < 4 || area.height < 3 {
+            return false;
+        }
 
         let (cell_w, cell_h) = self.renderer.font_size();
         let pixels = (
@@ -272,6 +336,7 @@ impl PixelDraw<'_> {
 
         let display_time = (-graph.x_min) as u64;
 
+        let renderer = self.renderer;
         let (rgba, size) = self.cache.get_or_update(
             last_time,
             display_time,
@@ -289,41 +354,12 @@ impl PixelDraw<'_> {
                     background,
                     &series,
                 );
-                rgb_to_rgba(&rgb, rgba);
+                rgb_to_rgba(&rgb, rgba, background);
             },
         );
 
-        Some((area, self.renderer, rgba, size))
+        renderer.draw(f, area, rgba, size)
     }
-}
-
-/// The region inside the border, past the y-labels and above the x-labels.
-///
-/// Reusing the surrounding chart's own axis geometry rather than re-deriving it means the
-/// image lands exactly on the data region, and there is only one place that decides where
-/// the axes go.
-fn plot_area(draw_loc: Rect, graph: &TimeGraph<'_>) -> Option<Rect> {
-    // Inside the border.
-    let inner = draw_loc.inner(ratatui::layout::Margin::new(1, 1));
-
-    let label_width: u16 = graph
-        .y_labels
-        .iter()
-        .map(|l| l.chars().count() as u16)
-        .max()
-        .unwrap_or(0);
-
-    let x_label_rows = u16::from(!graph.hide_x_labels);
-
-    let width = inner.width.checked_sub(label_width)?;
-    let height = inner.height.checked_sub(x_label_rows)?;
-
-    // Below this there is nothing an image buys over cell markers.
-    if width < 4 || height < 3 {
-        return None;
-    }
-
-    Some(Rect::new(inner.x + label_width, inner.y, width, height))
 }
 
 /// Flatten graph data into plain `(x, y)` series for the rasteriser.
@@ -350,7 +386,8 @@ fn collect_series<F: Copy + Default + Into<f64>>(
         .collect()
 }
 
-fn create_dataset<F: Copy + Default + Into<f64>>(data: GraphData<'_, F>) -> Dataset<'_, F> {
+/// Creates a new [`Dataset`].
+fn create_dataset<'a, F: Copy + Default + Into<f64>>(data: &'a GraphData<'a, F>) -> Dataset<'a, F> {
     let GraphData {
         time,
         values,
@@ -363,12 +400,32 @@ fn create_dataset<F: Copy + Default + Into<f64>>(data: GraphData<'_, F>) -> Data
     };
 
     let dataset = Dataset::default()
-        .style(style)
+        .style(*style)
         .data(time, values)
         .graph_type(GraphType::Line);
 
     if let Some(name) = name {
-        dataset.name(name)
+        dataset.name(name.as_ref())
+    } else {
+        dataset
+    }
+}
+
+/// Build a dataset that carries a series' name and colour for the legend, but no points.
+///
+/// Used instead of [`create_dataset`] when the pixel path has actually drawn the line. The
+/// underlying `Dataset` never gets a `.data()` call, so it draws nothing -- ratatui's chart
+/// legend renders from `.name()`/`.style()` alone, regardless of point count. Without this,
+/// the chart would draw its own cell-marker line directly on top of the pixel image (which
+/// is drawn first -- see [`PixelDraw::render_and_draw`]), poking coarse marker glyphs
+/// through the finer pixel line wherever the two paths cross.
+fn create_legend_only_dataset<'a, F: Copy + Default + Into<f64>>(
+    data: &'a GraphData<'a, F>,
+) -> Dataset<'a, F> {
+    let dataset = Dataset::default().style(data.style);
+
+    if let Some(name) = data.name.as_ref() {
+        dataset.name(name.as_ref())
     } else {
         dataset
     }

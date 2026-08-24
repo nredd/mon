@@ -555,6 +555,39 @@ impl<'a, F: Copy + Default + Into<f64>> TimeChart<'a, F> {
         self
     }
 
+    /// Where the legend will land if this chart renders into `area`, if anywhere.
+    ///
+    /// Exists for the pixel path: a Kitty-drawn image marks its cells `CellDiffOption::Skip`
+    /// so ratatui's diff engine leaves them untouched on the next frame, but the legend this
+    /// chart draws over that same image is a plain `set_symbol` call that never clears the
+    /// flag -- so the legend's own text update gets silently dropped by the diff engine.
+    /// The caller uses this rect to reset the flag after drawing, precisely where the chart
+    /// legitimately overwrote the image.
+    pub(crate) fn legend_rect(&self, area: Rect) -> Option<Rect> {
+        let chart_area = self.block.inner_if_some(area);
+        self.layout(chart_area).legend_area
+    }
+
+    /// Where the plotted data itself will land if this chart renders into `area`.
+    ///
+    /// Exists for the pixel path, which has to put its image on exactly the cells the chart
+    /// considers plot area and *not one cell further*. This is deliberately the chart's own
+    /// `layout()` rather than a re-derivation from the border and label widths: `layout()`
+    /// reserves a column for the y-axis line and a row for the x-axis line on top of the
+    /// label space, and it widens the left margin to fit the first x-label as well as the
+    /// y-labels. Guessing that geometry independently is how the pixel path ended up one
+    /// column too far left, laying the image's first cell -- which holds the entire row's
+    /// escape sequence -- directly under the y-axis line the chart then drew over it,
+    /// wiping every row of the image.
+    ///
+    /// Returns `None` when the area is too small for the chart to plot anything.
+    pub(crate) fn graph_rect(&self, area: Rect) -> Option<Rect> {
+        let chart_area = self.block.inner_if_some(area);
+        let graph_area = self.layout(chart_area).graph_area;
+
+        (!graph_area.is_empty()).then_some(graph_area)
+    }
+
     /// Compute the internal layout of the chart given the area. If the area is
     /// too small some elements may be automatically hidden
     fn layout(&self, area: Rect) -> ChartLayout {
@@ -1079,6 +1112,58 @@ mod tests {
                 .hidden_legend_constraints(case.hidden_legend_constraints);
             let layout = chart.layout(case.chart_area);
             assert_eq!(layout.legend_area, case.legend_area);
+        }
+    }
+
+    #[test]
+    fn graph_rect_excludes_every_cell_the_chart_draws_on() {
+        // This is the invariant the Kitty pixel path stands on. It lays its image over
+        // `graph_rect` and nothing else, and the Kitty renderer keeps an *entire row's*
+        // escape sequence in that row's first cell -- so a single column of overlap with
+        // the y-axis does not cost one column, it erases the whole image, row by row. That
+        // is exactly what happened when the pixel path derived the plot area itself from
+        // the border and label widths instead of asking the chart: it landed one column
+        // left of `graph_area`, the chart drew its y-axis line straight through every
+        // row's escape, and the graph rendered blank with a perfectly intact legend.
+        //
+        // No named datasets here on purpose -- the legend legitimately draws inside the
+        // plot area and the pixel path handles it separately. This is about the axes.
+        let area = Rect::new(0, 0, 40, 12);
+        let chart = TimeChart::new(Vec::<Dataset<'_, f64>>::new())
+            .x_axis(
+                Axis::default()
+                    .bounds(AxisBound::Min(-60000.0))
+                    .labels(vec![Span::raw("60s"), Span::raw("0s")]),
+            )
+            .y_axis(
+                Axis::default()
+                    .bounds(AxisBound::Max(100.0))
+                    .labels(vec![Span::raw("100%"), Span::raw("0%")]),
+            );
+
+        let rect = chart
+            .graph_rect(area)
+            .expect("40x12 is big enough to plot in");
+
+        // Stand in for the image: fill the claimed area, render, and check it survived.
+        let mut buf = Buffer::empty(area);
+        for y in rect.top()..rect.bottom() {
+            for x in rect.left()..rect.right() {
+                buf[(x, y)].set_symbol("#");
+            }
+        }
+
+        chart.render(area, &mut buf);
+
+        for y in rect.top()..rect.bottom() {
+            for x in rect.left()..rect.right() {
+                assert_eq!(
+                    buf[(x, y)].symbol(),
+                    "#",
+                    "the chart drew over ({x}, {y}), which `graph_rect` promised to the \
+                     pixel path -- a Kitty image there would be destroyed"
+                );
+            }
         }
     }
 

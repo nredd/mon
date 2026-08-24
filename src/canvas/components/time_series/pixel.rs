@@ -146,30 +146,45 @@ impl ImageCache {
     }
 }
 
-/// Repack an RGB buffer into RGBA, in place-compatible fashion.
+/// Repack an RGB buffer into RGBA, chroma-keying `background` to fully transparent.
 ///
 /// `plotters` has no RGBA `PixelFormat` -- `BitMapBackend::with_buffer` writes 3 bytes per
-/// pixel -- while `image`'s `RgbaImage` wants 4. This is that bridge.
+/// pixel -- while `image`'s `RgbaImage` wants 4. That gap is the reason this exists at all.
+///
+/// The transparency is deliberate, not incidental. bottom never paints an actual background
+/// color anywhere -- every widget just leaves cells at `Color::Reset` and lets the
+/// terminal's own background show through, which is how the app stays theme-neutral. There
+/// is no real RGB value to ask the terminal for, so the rasteriser has to guess one to fill
+/// the bitmap with (see `colour_to_rgb`'s `Reset -> None -> black` fallback in the caller).
+/// A guessed background painted opaque shows up as a wrong-colored rectangle sitting on top
+/// of the terminal's actual background. Keying it transparent instead means a plain guess
+/// is harmless: the guess never actually appears, and the real terminal background glows
+/// through underneath the line exactly as it does everywhere else in the UI.
+///
+/// This is an exact match, not a tolerance/threshold match. `plotters` anti-aliases line
+/// edges by blending toward the fill color it was given, so an edge pixel is a distinct RGB
+/// value from a pure background pixel and correctly stays opaque -- keying only the exact
+/// background leaves the anti-aliased halo intact, which is what makes the line's edges
+/// look smooth instead of jagged-and-cut-out.
 ///
 /// # Panics
 ///
-/// Never. A short or misaligned source simply produces opaque black for the pixels it
-/// cannot fill, which is a visible-but-harmless outcome rather than a crash in a draw loop.
-pub fn rgb_to_rgba(rgb: &[u8], rgba: &mut [u8]) {
+/// Never. A short or misaligned source simply produces transparent black for the pixels it
+/// cannot fill, which is invisible rather than a crash in a draw loop.
+pub fn rgb_to_rgba(rgb: &[u8], rgba: &mut [u8], background: (u8, u8, u8)) {
     for (index, chunk) in rgba.as_chunks_mut::<4>().0.iter_mut().enumerate() {
         let offset = index * 3;
 
-        if offset + 2 < rgb.len() {
-            chunk[0] = rgb[offset];
-            chunk[1] = rgb[offset + 1];
-            chunk[2] = rgb[offset + 2];
+        let pixel = if offset + 2 < rgb.len() {
+            (rgb[offset], rgb[offset + 1], rgb[offset + 2])
         } else {
-            chunk[0] = 0;
-            chunk[1] = 0;
-            chunk[2] = 0;
-        }
+            (0, 0, 0)
+        };
 
-        chunk[3] = 0xFF;
+        chunk[0] = pixel.0;
+        chunk[1] = pixel.1;
+        chunk[2] = pixel.2;
+        chunk[3] = if pixel == background { 0x00 } else { 0xFF };
     }
 }
 
@@ -400,29 +415,52 @@ mod tests {
     }
 
     #[test]
-    fn rgb_is_repacked_to_opaque_rgba() {
+    fn non_background_pixels_repack_opaque() {
         // plotters has no RGBA PixelFormat, so this bridge is unavoidable.
         let rgb = [1, 2, 3, 4, 5, 6];
         let mut rgba = [0u8; 8];
 
-        rgb_to_rgba(&rgb, &mut rgba);
+        rgb_to_rgba(&rgb, &mut rgba, (0, 0, 0));
 
         assert_eq!(rgba, [1, 2, 3, 0xFF, 4, 5, 6, 0xFF]);
     }
 
     #[test]
-    fn a_short_source_yields_black_rather_than_panicking() {
+    fn background_pixels_key_out_to_fully_transparent() {
+        // The whole point: bottom never paints a real background, so the rasteriser's
+        // guessed fill must not show up as an opaque rectangle. It has to let the
+        // terminal's actual background glow through instead.
+        let rgb = [10, 20, 30, 10, 20, 30, 99, 20, 30];
+        let mut rgba = [0u8; 12];
+
+        rgb_to_rgba(&rgb, &mut rgba, (10, 20, 30));
+
+        assert_eq!(
+            rgba[3], 0x00,
+            "an exact background pixel must be transparent"
+        );
+        assert_eq!(rgba[7], 0x00, "every background pixel, not just the first");
+        assert_eq!(
+            rgba[11], 0xFF,
+            "a pixel that merely resembles the background must stay opaque -- this is what \
+             keeps anti-aliased line edges smooth instead of jagged"
+        );
+    }
+
+    #[test]
+    fn a_short_source_yields_transparent_rather_than_panicking() {
         // A draw loop must not panic on an arithmetic surprise.
         let rgb = [9, 9, 9];
         let mut rgba = [0xAAu8; 8];
 
-        rgb_to_rgba(&rgb, &mut rgba);
+        rgb_to_rgba(&rgb, &mut rgba, (0, 0, 0));
 
         assert_eq!(&rgba[0..4], &[9, 9, 9, 0xFF]);
         assert_eq!(
             &rgba[4..8],
-            &[0, 0, 0, 0xFF],
-            "the unfilled pixel is opaque black"
+            &[0, 0, 0, 0x00],
+            "the unfilled pixel defaults to black, which is also this test's background, \
+             so it must key out transparent rather than show as a visible artifact"
         );
     }
 
@@ -682,8 +720,17 @@ impl PixelRenderer {
 
     /// Draw an RGBA buffer into `area`.
     ///
-    /// Returns false if the image could not be built, so the caller can leave the
-    /// cell-drawn graph underneath visible rather than showing nothing.
+    /// Returns false if the image could not be built, so the caller can fall back to the
+    /// cell-drawn graph instead of leaving the widget blank.
+    ///
+    /// Must be called *before* the surrounding chart draws its border, axis labels, and
+    /// legend. Those are plain text, drawn afterward in the normal course of rendering, and
+    /// a later `Widget::render` call unconditionally overwrites whatever a cell held before
+    /// -- so drawing this first is what lets the chart's own decorations naturally reclaim
+    /// their cells from the image, with no special-casing needed here. Doing it the other
+    /// way round doesn't have an equivalent: a Kitty image's placeholder run replaces a
+    /// cell's symbol outright, and there is no "draw under the existing text" operation at
+    /// the ratatui `Buffer` level to undo that after the fact.
     pub fn draw(
         &self, f: &mut ratatui::Frame<'_>, area: Rect, rgba: &[u8], pixels: (u32, u32),
     ) -> bool {
@@ -710,7 +757,7 @@ impl PixelRenderer {
                 true
             }
             // Encoding can fail on a degenerate size. Falling back to the cell rendering
-            // underneath is strictly better than panicking inside a draw loop.
+            // is strictly better than panicking inside a draw loop.
             Err(_) => false,
         }
     }
