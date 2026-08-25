@@ -356,6 +356,12 @@ pub struct Series {
     pub points: Vec<(f64, f64)>,
     /// Line colour.
     pub rgb: (u8, u8, u8),
+    /// Whether to fill the area between the line and zero.
+    ///
+    /// Used to stack series: a caller that has already turned per-series values into
+    /// running totals draws them largest-first with this set, and each fill covers the
+    /// lower part of the one before it, leaving a visible band per series.
+    pub filled: bool,
 }
 
 /// Rasterise a set of series into an RGB buffer, `stroke` pixels wide.
@@ -414,10 +420,21 @@ pub fn rasterize(
             }
 
             let colour = RGBColor(line.rgb.0, line.rgb.1, line.rgb.2);
-            chart.draw_series(LineSeries::new(
-                line.points.iter().copied(),
-                colour.stroke_width(stroke),
-            ))?;
+
+            if line.filled {
+                // Filled to the bottom of the plot rather than to zero, so a log axis --
+                // where zero is negative infinity and the baseline is the axis minimum --
+                // does not leave the band floating.
+                chart.draw_series(
+                    AreaSeries::new(line.points.iter().copied(), y_lo, colour.filled())
+                        .border_style(colour.stroke_width(stroke)),
+                )?;
+            } else {
+                chart.draw_series(LineSeries::new(
+                    line.points.iter().copied(),
+                    colour.stroke_width(stroke),
+                ))?;
+            }
         }
 
         root.present()?;
@@ -528,6 +545,7 @@ mod tests {
             &[Series {
                 points: vec![(-1.0, 0.5), (0.0, 0.5)],
                 rgb: red,
+                filled: false,
             }],
         );
 
@@ -576,6 +594,7 @@ mod tests {
             &[Series {
                 points: vec![(-60.0, 5.0), (0.0, 95.0)],
                 rgb: red,
+                filled: false,
             }],
         );
 
@@ -615,6 +634,7 @@ mod tests {
             &[Series {
                 points: vec![(-60.0, 5.0), (0.0, 95.0)],
                 rgb: red,
+                filled: false,
             }],
         );
 
@@ -730,6 +750,7 @@ mod raster_tests {
             &[Series {
                 points: vec![(-60.0, 50.0), (0.0, 50.0)],
                 rgb: red,
+                filled: false,
             }],
         );
 
@@ -767,6 +788,7 @@ mod raster_tests {
             &[Series {
                 points: vec![(-60.0, 10.0), (0.0, 90.0)],
                 rgb: green,
+                filled: false,
             }],
         );
 
@@ -828,6 +850,7 @@ mod raster_tests {
             &[Series {
                 points: vec![],
                 rgb: (1, 2, 3),
+                filled: false,
             }],
         );
     }

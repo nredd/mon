@@ -1,5 +1,6 @@
 pub mod battery_info;
 pub mod claude_graph;
+pub mod claude_stats;
 pub mod claude_table;
 pub mod cpu_graph;
 pub mod disk_io_graph;
@@ -13,6 +14,7 @@ pub mod temperature_table;
 
 pub use battery_info::*;
 pub use claude_graph::*;
+pub use claude_stats::*;
 pub use claude_table::*;
 pub use cpu_graph::*;
 pub use disk_io_graph::*;

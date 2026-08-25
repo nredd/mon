@@ -95,6 +95,11 @@ pub struct InnerData {
     pub(crate) temp_data: Vec<TempWidgetData>,
     pub(crate) claude_sessions: Vec<crate::collection::claude::ClaudeSession>,
     pub(crate) claude_rate_limits: Option<crate::collection::claude::RateLimits>,
+    /// Tokens per family over a rolling window, oldest bucket first. Empty unless a widget
+    /// that draws it is on screen.
+    pub(crate) claude_history: Vec<claude_metrics::Bucket>,
+    /// Families that contributed anything in that window, in a stable draw order.
+    pub(crate) claude_history_families: Vec<claude_metrics::ModelFamily>,
     /// Cumulative per-family totals from the previous tick, so the graph can difference
     /// them into a rate. Keyed by family label.
     prev_claude_tokens: FxHashMap<String, u64>,
@@ -123,6 +128,8 @@ impl Default for InnerData {
             temp_data: Vec::default(),
             claude_sessions: Vec::default(),
             claude_rate_limits: None,
+            claude_history: Vec::default(),
+            claude_history_families: Vec::default(),
             prev_claude_tokens: FxHashMap::default(),
             #[cfg(feature = "battery")]
             battery_harvest: Vec::default(),
@@ -247,6 +254,14 @@ impl InnerData {
 
             self.claude_sessions = claude.sessions;
             self.claude_rate_limits = claude.rate_limits;
+
+            // Only overwrite when a harvest actually carried history. A harvest with the
+            // stats widget off returns none, and clobbering the window with that would
+            // blank the graph on any tick where the widget happened to be off screen.
+            if !claude.history.is_empty() {
+                self.claude_history = claude.history;
+                self.claude_history_families = claude.history_families;
+            }
         }
 
         if used_widgets.use_power {

@@ -51,6 +51,13 @@ Two widgets reading live [Claude Code](https://claude.com/claude-code) activity 
 - `claude` -- a sortable table of live sessions: name, directory, model family, state,
   tokens, cost, context-window occupancy, subagent count
 - `claude_graph` -- token throughput by model family over time, on a log axis by default
+- `claude_stats` -- the equivalent of Claude Code's own `/status` stats screen, as stacked
+  bands of token spend by model family. That screen bars by day; this buckets by minute over
+  the last hour, so the shape of a working session is visible rather than collapsed into a
+  single bar. Built by walking `~/.claude/projects` and attributing each record to a bucket
+  from its own timestamp, so the window is complete the moment the widget appears rather
+  than having to be accumulated live -- and it keeps the tokens of sessions that have since
+  exited, which the live-session view cannot
 
 Backed by the `claude-metrics` workspace crate, which has no dependency on bottom. Counting
 is the fiddly part and the rules are documented in that crate: dedupe on

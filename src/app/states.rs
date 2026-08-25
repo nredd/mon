@@ -5,8 +5,8 @@ use crate::{
     constants,
     utils::input::InputFieldState,
     widgets::{
-        BatteryWidgetState, ClaudeGraphWidgetState, ClaudeWidgetState, CpuWidgetState,
-        DiskIoGraphWidgetState, DiskTableWidget, MemWidgetState, NetWidgetState,
+        BatteryWidgetState, ClaudeGraphWidgetState, ClaudeStatsWidgetState, ClaudeWidgetState,
+        CpuWidgetState, DiskIoGraphWidgetState, DiskTableWidget, MemWidgetState, NetWidgetState,
         PowerGraphWidgetState, ProcWidgetState, TempGraphWidgetState, TempWidgetState,
         query::ProcessQuery,
     },
@@ -24,6 +24,7 @@ pub struct AppWidgetStates {
     pub power_graph_state: PowerGraphStates,
     pub claude_state: ClaudeState,
     pub claude_graph_state: ClaudeGraphStates,
+    pub claude_stats_state: ClaudeStatsStates,
     pub battery_state: AppBatteryState,
     pub basic_table_widget_state: Option<BasicTableWidgetState>,
 }
@@ -254,6 +255,21 @@ impl ClaudeGraphStates {
     }
 
     pub fn get_mut_widget_state(&mut self, widget_id: u64) -> Option<&mut ClaudeGraphWidgetState> {
+        self.widget_states.get_mut(&widget_id)
+    }
+}
+
+/// Holds per-widget state for all Claude token-history stats instances in the layout.
+pub struct ClaudeStatsStates {
+    pub widget_states: HashMap<u64, ClaudeStatsWidgetState>,
+}
+
+impl ClaudeStatsStates {
+    pub fn init(widget_states: HashMap<u64, ClaudeStatsWidgetState>) -> Self {
+        ClaudeStatsStates { widget_states }
+    }
+
+    pub fn get_mut_widget_state(&mut self, widget_id: u64) -> Option<&mut ClaudeStatsWidgetState> {
         self.widget_states.get_mut(&widget_id)
     }
 }

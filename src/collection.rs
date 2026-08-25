@@ -647,7 +647,7 @@ impl DataCollector {
             .claude_collector
             .get_or_insert_with(claude::ClaudeCollector::new);
 
-        self.data.claude = collector.harvest();
+        self.data.claude = collector.harvest(self.widgets_to_harvest.use_claude_stats);
     }
 
     /// Update battery information.

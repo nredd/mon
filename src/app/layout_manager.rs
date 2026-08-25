@@ -942,6 +942,7 @@ pub enum BottomWidgetType {
     Power,
     Claude,
     ClaudeGraph,
+    ClaudeStats,
     BasicCpu,
     BasicMem,
     BasicNet,
@@ -959,7 +960,7 @@ impl BottomWidgetType {
         use BottomWidgetType::*;
         matches!(
             self,
-            Cpu | Net | Mem | TempGraph | DiskIoGraph | Power | ClaudeGraph
+            Cpu | Net | Mem | TempGraph | DiskIoGraph | Power | ClaudeGraph | ClaudeStats
         )
     }
 
@@ -980,6 +981,7 @@ impl BottomWidgetType {
             Power => "Power",
             Claude => "Claude",
             ClaudeGraph => "Claude Tokens",
+            ClaudeStats => "Claude Stats",
             _ => "",
         }
     }
@@ -1002,6 +1004,7 @@ impl std::str::FromStr for BottomWidgetType {
             "power" => Ok(BottomWidgetType::Power),
             "claude" => Ok(BottomWidgetType::Claude),
             "claude_graph" => Ok(BottomWidgetType::ClaudeGraph),
+            "claude_stats" => Ok(BottomWidgetType::ClaudeStats),
             "empty" => Ok(BottomWidgetType::Empty),
             #[cfg(feature = "battery")]
             "battery" | "batt" => Ok(BottomWidgetType::Battery),
@@ -1034,6 +1037,8 @@ Supported widget names:
 |             claude             |
 +--------------------------------+
 |          claude_graph          |
++--------------------------------+
+|          claude_stats          |
 +--------------------------------+
 |          batt, battery         |
 +--------------------------------+
@@ -1071,6 +1076,8 @@ Supported widget names:
 +--------------------------------+
 |          claude_graph          |
 +--------------------------------+
+|          claude_stats          |
++--------------------------------+
 |              empty             |
 +--------------------------------+
                 ",
@@ -1096,6 +1103,9 @@ pub struct UsedWidgets {
     pub use_battery: bool,
     pub use_power: bool,
     pub use_claude: bool,
+    /// Whether any widget needs the rolling token history, which is the only part of a
+    /// Claude harvest that reads transcripts outside the live sessions.
+    pub use_claude_stats: bool,
 }
 
 #[cfg(test)]
@@ -1145,8 +1155,16 @@ mod added_widget_tests {
             "the token-rate graph must count as a graph or it gets no timeseries state"
         );
 
+        let stats: BottomWidgetType = "claude_stats".parse().expect("`claude_stats` must parse");
+        assert_eq!(stats, BottomWidgetType::ClaudeStats);
+        assert!(
+            stats.is_widget_graph(),
+            "the stats graph must count as a graph or it gets no timeseries state"
+        );
+
         assert_eq!(table.get_pretty_name(), "Claude");
         assert_eq!(graph.get_pretty_name(), "Claude Tokens");
+        assert_eq!(stats.get_pretty_name(), "Claude Stats");
     }
 
     #[test]
@@ -1156,15 +1174,18 @@ mod added_widget_tests {
             .expect_err("an unknown widget name must be an error")
             .to_string();
 
-        assert_eq!(
-            err.matches("claude_graph").count(),
-            1,
-            "the widget-name table must list `claude_graph`. Error was:\n{err}"
-        );
-        // `claude` also appears inside `claude_graph`, hence two.
+        for name in ["claude_graph", "claude_stats"] {
+            assert_eq!(
+                err.matches(name).count(),
+                1,
+                "the widget-name table must list `{name}`. Error was:\n{err}"
+            );
+        }
+
+        // `claude` also appears inside `claude_graph` and `claude_stats`, hence three.
         assert_eq!(
             err.matches("claude").count(),
-            2,
+            3,
             "the widget-name table must list `claude`. Error was:\n{err}"
         );
     }

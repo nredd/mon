@@ -9,7 +9,9 @@
 //! thread. Accepted rather than threaded: it happens once per session, and a thread would
 //! buy nothing on every subsequent tick.
 
-use claude_metrics::{ClaudeMetrics, ModelFamily, Statusline, TokenTotals};
+use std::time::Duration;
+
+use claude_metrics::{Bucket, ClaudeMetrics, ModelFamily, Statusline, TokenHistory, TokenTotals};
 
 /// One live session, flattened for display.
 #[derive(Clone, Debug, Default)]
@@ -49,6 +51,15 @@ pub struct ClaudeData {
     ///
     /// These are account-wide rather than per-session, so any session's copy will do.
     pub rate_limits: Option<RateLimits>,
+    /// Tokens per model family over a rolling window, oldest bucket first.
+    ///
+    /// Empty unless a widget that draws it is on screen -- see
+    /// [`crate::app::layout_manager::UsedWidgets::use_claude_stats`]. This is read from the
+    /// whole `~/.claude/projects` tree rather than from the live sessions, so it keeps the
+    /// tokens of sessions that have since exited.
+    pub history: Vec<Bucket>,
+    /// Families that contributed anything in the window, in a stable draw order.
+    pub history_families: Vec<ModelFamily>,
 }
 
 /// Account-wide rate-limit consumption.
@@ -75,10 +86,22 @@ impl From<&Statusline> for RateLimits {
     }
 }
 
+/// How far back the stats history reaches.
+const HISTORY_WINDOW: Duration = Duration::from_secs(60 * 60);
+
+/// How finely that window is divided.
+///
+/// A minute is deliberately far finer than Claude Code's own `/status`, which bars by day.
+/// At this width an hour is sixty points, which is enough to see the shape of a working
+/// session rather than a single flat bar.
+const HISTORY_BUCKET: Duration = Duration::from_secs(60);
+
 /// Owns the reader and turns a refresh into a [`ClaudeData`] snapshot.
 #[derive(Debug)]
 pub struct ClaudeCollector {
     metrics: Option<ClaudeMetrics>,
+    /// Built on first use, so a layout without the stats widget never walks the tree.
+    history: Option<TokenHistory>,
 }
 
 impl Default for ClaudeCollector {
@@ -95,13 +118,30 @@ impl ClaudeCollector {
     pub fn new() -> Self {
         Self {
             metrics: ClaudeMetrics::with_default_root(),
+            history: None,
         }
     }
 
     /// Re-read and snapshot.
-    pub fn harvest(&mut self) -> Option<ClaudeData> {
+    ///
+    /// `want_history` gates the rolling-window scan, which is the only part of a harvest
+    /// that touches transcripts outside the live sessions. A layout with no stats widget
+    /// should not pay for it.
+    pub fn harvest(&mut self, want_history: bool) -> Option<ClaudeData> {
         let metrics = self.metrics.as_mut()?;
         metrics.refresh();
+
+        let (history, history_families) = if want_history {
+            let root = metrics.root().to_path_buf();
+            let history = self
+                .history
+                .get_or_insert_with(|| TokenHistory::new(root, HISTORY_WINDOW, HISTORY_BUCKET));
+
+            history.refresh();
+            (history.buckets(), history.families())
+        } else {
+            (Vec::new(), Vec::new())
+        };
 
         let mut rate_limits = None;
 
@@ -150,6 +190,8 @@ impl ClaudeCollector {
             sessions,
             totals: metrics.totals_by_model(),
             rate_limits,
+            history,
+            history_families,
         })
     }
 }

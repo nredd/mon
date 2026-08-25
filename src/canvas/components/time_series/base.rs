@@ -30,6 +30,7 @@ pub(crate) struct GraphData<'a, F = f64> {
     values: Option<&'a ChunkedData<F>>,
     style: Style,
     name: Option<Cow<'a, str>>,
+    filled: bool,
 }
 
 impl<'a, F> GraphData<'a, F> {
@@ -50,6 +51,16 @@ impl<'a, F> GraphData<'a, F> {
 
     pub fn name(mut self, name: Cow<'a, str>) -> Self {
         self.name = Some(name);
+        self
+    }
+
+    /// Fill the area beneath this series, for a caller drawing stacked bands.
+    ///
+    /// Only the pixel path honours this. The cell path draws the series as a plain line, so
+    /// a stacked graph degrades to its band boundaries rather than to nothing -- the same
+    /// trade the rest of the pixel path makes.
+    pub fn filled(mut self, filled: bool) -> Self {
+        self.filled = filled;
         self
     }
 }
@@ -379,7 +390,11 @@ fn collect_series<F: Copy + Default + Into<f64>>(
                 })
                 .collect();
 
-            Some(Series { points, rgb })
+            Some(Series {
+                points,
+                rgb,
+                filled: data.filled,
+            })
         })
         .collect()
 }
@@ -391,6 +406,8 @@ fn create_dataset<'a, F: Copy + Default + Into<f64>>(data: &'a GraphData<'a, F>)
         values,
         style,
         name,
+        // Only the pixel path fills; the cell chart draws every series as a line.
+        filled: _,
     } = data;
 
     let Some(values) = values else {

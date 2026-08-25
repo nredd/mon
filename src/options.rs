@@ -145,6 +145,11 @@ macro_rules! config_or {
 /// The default config file sub-path.
 const DEFAULT_CONFIG_FILE_LOCATION: &str = "bottom/bottom.toml";
 
+/// The window the Claude stats graph plots, matching what the collector asks
+/// `claude-metrics` for. Asking the graph for more would draw dead space before the oldest
+/// bucket the history actually holds.
+const CLAUDE_STATS_WINDOW_MS: u64 = 60 * 60 * 1000;
+
 /// Returns the config path to use. If `override_config_path` is specified, then
 /// we will use that. If not, then return the "default" config path, which is:
 ///
@@ -384,6 +389,7 @@ pub(crate) fn init_app(args: BottomArgs, config: Config) -> Result<(App, BottomL
     let mut power_graph_state_map: FxHashMap<u64, PowerGraphWidgetState> = FxHashMap::default();
     let mut claude_state_map: FxHashMap<u64, ClaudeWidgetState> = FxHashMap::default();
     let mut claude_graph_state_map: FxHashMap<u64, ClaudeGraphWidgetState> = FxHashMap::default();
+    let mut claude_stats_state_map: FxHashMap<u64, ClaudeStatsWidgetState> = FxHashMap::default();
     let mut battery_state_map: FxHashMap<u64, BatteryWidgetState> = FxHashMap::default();
 
     let autohide_timer = if autohide_time {
@@ -788,6 +794,31 @@ pub(crate) fn init_app(args: BottomArgs, config: Config) -> Result<(App, BottomL
                                 ClaudeGraphWidgetState::new(ts_config, autohide_timer, use_log),
                             );
                         }
+                        ClaudeStats => {
+                            // Linear by default, unlike the rate graph. A bucketed total
+                            // spans a far narrower range than an instantaneous rate, and
+                            // stacked bands only sum to the total on a linear axis.
+                            let use_log = config
+                                .claude
+                                .as_ref()
+                                .and_then(|c| c.stats_use_log)
+                                .unwrap_or(false);
+
+                            // The window is the history's own, not the app-wide default:
+                            // the buckets `claude-metrics` hands over cover exactly an
+                            // hour, and a graph asking for more would draw dead space
+                            // before the oldest bucket.
+                            let stats_config = TimeseriesConfig {
+                                default_time_value: CLAUDE_STATS_WINDOW_MS,
+                                retention_ms: CLAUDE_STATS_WINDOW_MS,
+                                ..ts_config
+                            };
+
+                            claude_stats_state_map.insert(
+                                widget.widget_id,
+                                ClaudeStatsWidgetState::new(stats_config, autohide_timer, use_log),
+                            );
+                        }
                         Battery => {
                             battery_state_map
                                 .insert(widget.widget_id, BatteryWidgetState::default());
@@ -838,7 +869,10 @@ pub(crate) fn init_app(args: BottomArgs, config: Config) -> Result<(App, BottomL
         use_disk_io_graph: used_widget_set.contains(&DiskIoGraph),
         use_battery: used_widget_set.contains(&Battery),
         use_power: used_widget_set.contains(&Power),
-        use_claude: used_widget_set.contains(&Claude) || used_widget_set.contains(&ClaudeGraph),
+        use_claude: used_widget_set.contains(&Claude)
+            || used_widget_set.contains(&ClaudeGraph)
+            || used_widget_set.contains(&ClaudeStats),
+        use_claude_stats: used_widget_set.contains(&ClaudeStats),
     };
 
     let (disk_name_filter, disk_mount_filter) = {
@@ -882,6 +916,7 @@ pub(crate) fn init_app(args: BottomArgs, config: Config) -> Result<(App, BottomL
         power_graph_state: PowerGraphStates::init(power_graph_state_map),
         claude_state: ClaudeState::init(claude_state_map),
         claude_graph_state: ClaudeGraphStates::init(claude_graph_state_map),
+        claude_stats_state: ClaudeStatsStates::init(claude_stats_state_map),
         battery_state: AppBatteryState::init(battery_state_map),
         basic_table_widget_state,
     };

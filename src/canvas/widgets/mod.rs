@@ -1,6 +1,7 @@
 use crate::{collection::network::NetworkHarvest, utils::data_units::convert_bytes};
 
 pub mod claude_graph;
+pub mod claude_stats;
 pub mod claude_table;
 pub mod cpu_basic;
 pub mod cpu_graph;
