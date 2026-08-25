@@ -1117,6 +1117,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#stats-graph" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stats graph
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#where-the-numbers-come-from" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2207,11 +2218,12 @@
 <p>These widgets are specific to <a href="https://github.com/nredd/mon">mon</a> and are not part of
 upstream bottom.</p>
 </div>
-<p>Two widgets read live <a href="https://claude.com/claude-code">Claude Code</a> activity off the local
+<p>Three widgets read <a href="https://claude.com/claude-code">Claude Code</a> activity off the local
 <code>~/.claude</code> tree:</p>
 <ul>
 <li><code>claude</code> -- a table of live sessions</li>
 <li><code>claude_graph</code> -- token throughput over time, by model family</li>
+<li><code>claude_stats</code> -- token spend over the last hour, as stacked bands by model family</li>
 </ul>
 <p>Neither is in the default layout. Add them to your
 <a href="../../../configuration/config-file/layout/">layout</a> to use them.</p>
@@ -2268,9 +2280,34 @@ cumulative totals.</p>
 <p>The y-axis is <strong>logarithmic by default</strong>. Cache reads run into the millions of tokens per
 second while fresh input tokens are single digits, so on a linear axis every series but the
 largest sits flat on the floor. Set <code>use_log = false</code> to switch.</p>
+<h2 id="stats-graph"><a class="toclink" href="#stats-graph">Stats graph</a></h2>
+<p>The equivalent of Claude Code's own <code>/status</code> stats screen. Claude Code bars token spend by
+day; this buckets by <strong>minute over the last hour</strong>, so the shape of a working session is
+visible rather than collapsed into a single bar.</p>
+<p>Families are drawn as stacked bands, so the top of the stack is the total spend in that
+minute and each band is one family's share. The legend carries each family's total across
+the whole window.</p>
+<p>The y-axis is <strong>linear by default</strong>, unlike the token graph. A bucketed total spans a far
+narrower range than an instantaneous rate -- a busy minute and a quiet one differ by a factor
+of ten, not by five orders of magnitude -- and stacked bands only add up to the total on a
+linear axis. Set <code>stats_use_log = true</code> if one family dwarfs the rest badly enough to need
+it, accepting that the bands stop summing to the visible total.</p>
+<p>The bands are filled only on the <a href="../../../#kitty-pixel-rendering">pixel path</a>. With cell
+markers the graph degrades to the band boundaries as plain lines, which is still readable --
+the same trade the pixel path makes everywhere else.</p>
+<p>This is the only part of a Claude harvest that reads transcripts outside the live sessions,
+so it is skipped entirely unless the widget is in your layout.</p>
 <h2 id="where-the-numbers-come-from"><a class="toclink" href="#where-the-numbers-come-from">Where the numbers come from</a></h2>
 <p>Tokens, agent counts, and turn durations are parsed out of the session transcripts under
 <code>~/.claude/projects</code>.</p>
+<p><code>claude_stats</code> walks that tree itself rather than building on the live sessions, and
+attributes each record to a bucket using the record's own timestamp. Two consequences worth
+knowing: the window is complete the moment the widget first appears, instead of having to be
+accumulated live over an hour before the graph says anything, and it keeps the tokens of
+sessions that have since exited -- which the live-session view cannot, since it drops a
+session's state as soon as it leaves the registry. Candidate files are filtered by
+modification time before being opened, so a tree with a year of transcripts in it still only
+opens the handful touched inside the window.</p>
 <p><strong>Cost, context-window occupancy, and rate limits need the statusline tee.</strong> Claude Code
 hands those to the statusline command on stdin and writes them nowhere else on disk, so
 <code>mon</code> reads them from a cache that your statusline has to populate. Add this near the top of
@@ -2352,7 +2389,7 @@ _mon_cache_payload<span class="w"> </span><span class="o">||</span><span class="
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="August 24, 2026 01:56:37">August 24, 2026</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="August 25, 2026 04:16:22">August 25, 2026</span>
   </span>
 
     
