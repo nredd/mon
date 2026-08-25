@@ -45,7 +45,7 @@ but `P`/`S` on M5+.
 
 ### Claude Code metrics
 
-Two widgets reading live [Claude Code](https://claude.com/claude-code) activity off
+Three widgets reading live [Claude Code](https://claude.com/claude-code) activity off
 `~/.claude`:
 
 - `claude` -- a sortable table of live sessions: name, directory, model family, state,
@@ -68,6 +68,12 @@ across a message's per-content-block records.
 Cost, context, and rate limits need a small tee in your statusline -- see
 [the docs](https://github.com/nredd/mon/blob/main/docs/content/usage/widgets/claude.md).
 Without it those columns read `N/A` and everything else still works.
+
+`sample_configs/claude_config.toml` is a ready-made layout with all three and nothing else:
+
+```console
+$ mon -C sample_configs/claude_config.toml --pixel_graphs kitty
+```
 
 ### Configurable graph markers
 

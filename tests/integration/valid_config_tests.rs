@@ -185,6 +185,18 @@ fn test_demo() {
     }
 }
 
+/// The Claude-only sample layout has to keep parsing and drawing, since it is the config
+/// used for hand-testing those widgets.
+#[test]
+fn test_claude() {
+    let path: &str = "./sample_configs/claude_config.toml";
+    if std::path::Path::new(path).exists() {
+        run_and_kill(&["-C", path]);
+    } else {
+        println!("Could not read claude config.");
+    }
+}
+
 #[test]
 fn test_many_proc() {
     run_and_kill_cfg("./tests/valid_configs/many_proc.toml");

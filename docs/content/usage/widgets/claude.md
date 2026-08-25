@@ -12,8 +12,17 @@ Three widgets read [Claude Code](https://claude.com/claude-code) activity off th
 - `claude_graph` -- token throughput over time, by model family
 - `claude_stats` -- token spend over the last hour, as stacked bands by model family
 
-Neither is in the default layout. Add them to your
-[layout](../../configuration/config-file/layout.md) to use them.
+None of them are in the default layout. Add them to your
+[layout](../../configuration/config-file/layout.md) to use them, or start from
+[`sample_configs/claude_config.toml`](https://github.com/nredd/mon/blob/main/sample_configs/claude_config.toml),
+which draws all three and nothing else:
+
+```console
+$ mon -C sample_configs/claude_config.toml --pixel_graphs kitty
+```
+
+That config also carries the family colour list and the two `use_log` toggles inline, so it
+is a reasonable place to retune them.
 
 ## Sessions table
 

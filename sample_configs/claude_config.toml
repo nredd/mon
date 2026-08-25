@@ -1,0 +1,84 @@
+# A Claude-Code-only layout for mon.
+#
+# Everything system-related is dropped. What is left is the three Claude widgets, stacked
+# largest-first: the per-minute token history (mon's answer to Claude Code's own `/status`
+# Models tab), the live token-rate graph underneath it, and the session table at the bottom.
+#
+# Run it with:
+#
+#   cargo run --release -- -C sample_configs/claude_config.toml --pixel_graphs kitty
+#
+# Drop `--pixel_graphs kitty` outside Ghostty/Kitty/WezTerm and the graphs fall back to
+# braille cell markers.
+#
+# There is nothing to point at `~/.claude` here. `claude-metrics` resolves `$HOME/.claude`
+# itself and reads the transcripts on disk, so this config works as-is on any machine that
+# has run Claude Code.
+
+[flags]
+# One collection tick a second. The history widget rebuilds its window from disk rather
+# than accumulating live, so this only paces the rate graph and the session table.
+rate = "1s"
+
+# Keep an hour of rate samples so the token graph can zoom out to match the history
+# widget's window. `-`/`+` (or the scroll wheel) move between the two.
+retention = "1h"
+default_time_value = "5m"
+time_delta = "30s"
+
+# Both graphs carry a legend, so the extra time axis under each one is noise.
+hide_time = true
+
+# A rule between the session table's header and its rows.
+table_gap = "line"
+
+# Nothing here can stop a process, so take the kill path off the table entirely.
+read_only = true
+
+[claude]
+# The rate graph spans orders of magnitude -- cache reads run into millions of tokens a
+# second while fresh input tokens are single digits -- so it stays logarithmic.
+use_log = true
+
+# The history graph does not. Its bands are stacked running totals, and a stack only sums
+# to the visible total on a linear axis.
+stats_use_log = false
+
+# Legends sit top-right on both graphs, out of the way of the rising edge.
+legend_position = "top-right"
+
+[styles.claude]
+# Model families in fixed order: Opus, Sonnet, Haiku, Fable, Other. These are mon's
+# built-in defaults, repeated here so they are easy to retune. They are picked for a dark
+# surface and checked for a lightness band, a chroma floor, adjacent colour-blind
+# separation, and 3:1 contrast -- swap them and that stops holding.
+colours = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181"]
+
+[styles.widgets]
+border_colour = "#4a4a4a"
+selected_border_colour = "#d95926"
+widget_title = { colour = "#d95926", bold = true }
+
+[styles.graphs]
+graph_colour = "#6a6a6a"
+legend_text = { colour = "#b4b4b4" }
+
+[styles.tables]
+headers = { colour = "#d95926", bold = true }
+
+# Layout: history on top, rate underneath, sessions at the bottom.
+[[row]]
+ratio = 44
+[[row.child]]
+type = "claude_stats"
+
+[[row]]
+ratio = 32
+[[row.child]]
+type = "claude_graph"
+
+[[row]]
+ratio = 24
+[[row.child]]
+type = "claude"
+default = true
