@@ -274,6 +274,17 @@ pub(crate) fn format_tokens(tokens: f64) -> String {
     }
 }
 
+/// What the legend row says while the transcript scan is still catching up.
+///
+/// A cold read of a month of transcripts takes seconds, and a graph showing a tenth of the
+/// data is indistinguishable from one showing all of it. Saying so is worth the row.
+pub(crate) fn scan_note(progress: f64) -> String {
+    format!(
+        "scanning transcripts... {:.0}%",
+        progress.clamp(0.0, 1.0) * 100.0
+    )
+}
+
 /// The swatch drawn beside each family in the legend.
 const SWATCH: &str = "●";
 

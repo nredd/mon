@@ -184,6 +184,30 @@ impl Record {
         let id = message.id.as_deref()?;
         Some(format!("{request}\u{0}{id}"))
     }
+
+    /// The same key, hashed.
+    ///
+    /// [`crate::TokenHistory`] holds one of these per billable message across its whole
+    /// window -- tens of thousands at a month -- and checkpoints them to disk. Keeping the
+    /// strings costs a heap allocation each and several times the bytes, for a map that is
+    /// only ever probed for equality. A collision silently merges two messages into one,
+    /// undercounting by one message; at 64 bits and this population that is not a risk
+    /// worth carrying strings to avoid.
+    ///
+    /// The unhashed key stays for [`UsageAccumulator`], which holds only one live session's
+    /// messages and never persists them.
+    #[must_use]
+    pub fn dedupe_hash(&self) -> Option<u64> {
+        use std::hash::{Hash as _, Hasher as _};
+
+        let message = self.message.as_ref()?;
+        let id = message.id.as_deref()?;
+
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        self.request_id.as_deref().unwrap_or("").hash(&mut hasher);
+        id.hash(&mut hasher);
+        Some(hasher.finish())
+    }
 }
 
 /// Parse `YYYY-MM-DDTHH:MM:SS[.sss]Z` into Unix epoch milliseconds.

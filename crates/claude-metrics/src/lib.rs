@@ -72,7 +72,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub use history::{Bucket, TokenHistory};
+pub use history::{Bucket, REFRESH_CHUNK_BYTES, TokenHistory};
 pub use model::ModelFamily;
 pub use range::StatsRange;
 pub use session::Session;

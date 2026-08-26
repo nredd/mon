@@ -9,11 +9,13 @@
 //! thread. Accepted rather than threaded: it happens once per session, and a thread would
 //! buy nothing on every subsequent tick.
 
-use std::time::Duration;
+mod history_worker;
 
-use claude_metrics::{
-    Bucket, ClaudeMetrics, ModelFamily, StatsRange, Statusline, TokenHistory, TokenTotals,
-};
+use std::{path::PathBuf, time::Duration};
+
+use claude_metrics::{Bucket, ClaudeMetrics, ModelFamily, StatsRange, Statusline, TokenTotals};
+
+use history_worker::HistoryWorker;
 
 /// One live session, flattened for display.
 #[derive(Clone, Debug, Default)]
@@ -69,6 +71,11 @@ pub struct ClaudeData {
     pub rate_history: Vec<Bucket>,
     /// Families that contributed anything in the retained window, in a stable draw order.
     pub history_families: Vec<ModelFamily>,
+    /// How far through a cold read the scan is, or `None` once it has caught up.
+    ///
+    /// Worth drawing: a first run on a large tree takes seconds, and a graph quietly
+    /// showing a tenth of the data looks exactly like one showing all of it.
+    pub history_progress: Option<f64>,
 }
 
 /// Account-wide rate-limit consumption.
@@ -95,25 +102,32 @@ impl From<&Statusline> for RateLimits {
     }
 }
 
-/// How far back the retained history reaches.
+/// How far back the retained history reaches: whatever the widest selectable range needs.
 ///
-/// This is the mtime cutoff [`TokenHistory`] filters transcripts by, so it is a direct
-/// multiplier on the first refresh's cost. Measured on a real tree: a day reaches ~200
-/// files / ~42MB, a week ~1200 files / ~352MB. Long-lived sessions keep old transcripts
-/// freshly modified, so past about a week the filter stops filtering and the window is
-/// effectively the whole corpus.
-///
-/// TODO(redd): widen this to [`StatsRange::widest`] once the history is persisted and the
-/// cold build runs off the collection thread. Until then the two widest ranges are
-/// selectable but only show what fits in here.
-const HISTORY_WINDOW: Duration = Duration::from_secs(24 * 60 * 60);
+/// This is also the modification-time cutoff the scan filters transcripts by, and so a
+/// direct multiplier on a cold read's cost. Measured on a real tree: a day reaches ~200
+/// files / ~42MB, a week ~1200 / ~352MB, a month ~1600 / ~600MB. The filter stops filtering
+/// much past a week, because long-lived sessions keep old transcripts freshly modified.
+/// That is affordable only because the scan runs on its own thread and checkpoints itself
+/// -- see [`history_worker`].
+fn history_window() -> Duration {
+    StatsRange::widest().window()
+}
 
 /// How finely that window is divided internally.
 ///
 /// Deliberately finer than anything drawn. Every range rolls this grid up on demand via
-/// [`TokenHistory::aggregate`], so the transcripts are parsed once no matter how many
-/// views want them, and switching range costs an aggregation rather than a re-scan.
+/// `TokenHistory::aggregate`, so the transcripts are parsed once no matter how many views
+/// want them, and switching range costs an aggregation rather than a re-scan.
 const HISTORY_BUCKET: Duration = Duration::from_secs(10);
+
+/// Where the scan's checkpoint lives.
+///
+/// A cache directory rather than a config or data one: losing it costs one cold read and
+/// nothing else, which is exactly what a cache is for.
+fn checkpoint_path() -> Option<PathBuf> {
+    Some(dirs::cache_dir()?.join("mon").join("claude-history.json"))
+}
 
 /// How far back the token-rate graph reaches.
 ///
@@ -128,8 +142,8 @@ pub const RATE_BUCKET: Duration = HISTORY_BUCKET;
 #[derive(Debug)]
 pub struct ClaudeCollector {
     metrics: Option<ClaudeMetrics>,
-    /// Built on first use, so a layout without the stats widget never walks the tree.
-    history: Option<TokenHistory>,
+    /// Started on first use, so a layout without the stats widget never walks the tree.
+    history: Option<HistoryWorker>,
 }
 
 impl Default for ClaudeCollector {
@@ -154,27 +168,31 @@ impl ClaudeCollector {
     ///
     /// `range` gates the rolling-window scan, which is the only part of a harvest that
     /// touches transcripts outside the live sessions. `None` means no widget that draws it
-    /// is on screen, and a layout without one should not pay for it.
+    /// is on screen, and a layout without one should not pay for it -- nor even start the
+    /// thread that does it.
     pub fn harvest(&mut self, range: Option<StatsRange>) -> Option<ClaudeData> {
         let metrics = self.metrics.as_mut()?;
         metrics.refresh();
 
-        let (history, rate_history, history_families) = if let Some(range) = range {
+        let snapshot = range.map(|range| {
             let root = metrics.root().to_path_buf();
-            let history = self
-                .history
-                .get_or_insert_with(|| TokenHistory::new(root, HISTORY_WINDOW, HISTORY_BUCKET));
 
-            history.refresh();
+            self.history
+                .get_or_insert_with(|| {
+                    HistoryWorker::spawn(
+                        root,
+                        checkpoint_path(),
+                        history_window(),
+                        HISTORY_BUCKET,
+                        RATE_WINDOW,
+                        RATE_BUCKET,
+                        range,
+                    )
+                })
+                .latest(range)
+        });
 
-            (
-                history.aggregate(range.window(), range.bucket()),
-                history.aggregate(RATE_WINDOW, RATE_BUCKET),
-                history.families(),
-            )
-        } else {
-            (Vec::new(), Vec::new(), Vec::new())
-        };
+        let snapshot = snapshot.unwrap_or_default();
 
         let mut rate_limits = None;
 
@@ -223,10 +241,11 @@ impl ClaudeCollector {
             sessions,
             totals: metrics.totals_by_model(),
             rate_limits,
-            history,
-            history_range: range.unwrap_or_default(),
-            rate_history,
-            history_families,
+            history: snapshot.history,
+            history_range: snapshot.range,
+            rate_history: snapshot.rate,
+            history_families: snapshot.families,
+            history_progress: snapshot.progress,
         })
     }
 }

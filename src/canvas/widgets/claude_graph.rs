@@ -65,6 +65,9 @@ impl Painter {
 
             let use_log = widget_state.use_log;
             let footer_rows = claude_series::footer_rows(draw_loc);
+            let scan_note = shared_data
+                .claude_history_progress
+                .map(claude_series::scan_note);
 
             // Tokens in a bucket over the seconds that bucket covers.
             let series =
@@ -150,7 +153,7 @@ impl Painter {
                 None,
                 self.styles.widget_title_style,
                 self.styles.graph_legend_style,
-                None,
+                scan_note.as_deref(),
             );
         }
 

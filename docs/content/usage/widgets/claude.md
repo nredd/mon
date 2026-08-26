@@ -88,7 +88,8 @@ The stepping is pixel-path-only. With cell markers the graph degrades to straigh
 lines, which is still readable -- the same trade the pixel path makes everywhere else.
 
 This is the only part of a Claude harvest that reads transcripts outside the live sessions,
-so it is skipped entirely unless the widget is in your layout.
+so it is skipped entirely unless the widget is in your layout -- not even the thread that
+does it gets started.
 
 ## Token graph
 
@@ -123,28 +124,65 @@ The y-axis is **linear by default**; `l` toggles it, or set `use_log = true`.
 Tokens, agent counts, and turn durations are parsed out of the session transcripts under
 `~/.claude/projects`.
 
+Two levels of that tree matter:
+
+- `projects/<project>/<session>.jsonl` -- the main session transcript.
+- `projects/<project>/<session>/subagents/<agent>.jsonl` -- one per subagent.
+
+The subagent files are not incidental detail. On a real tree they outnumber the session
+transcripts four to one and hold more bytes than all of them together, and their messages
+are almost entirely *disjoint* from the parent's: a subagent's turns are billed to the
+account but written only there.
+
 `claude_stats` walks that tree itself rather than building on the live sessions, and
 attributes each record to a bucket using the record's own timestamp. Two consequences worth
 knowing: the window is complete the moment the widget first appears, instead of having to be
-accumulated live over an hour before the graph says anything, and it keeps the tokens of
-sessions that have since exited -- which the live-session view cannot, since it drops a
-session's state as soon as it leaves the registry. Candidate files are filtered by
-modification time before being opened, so a tree with a year of transcripts in it still only
-opens the handful touched inside the window.
+accumulated live before the graph says anything, and it keeps the tokens of sessions that
+have since exited -- which the live-session view cannot, since it drops a session's state as
+soon as it leaves the registry.
+
+### The scan, and why it is not on the collection thread
+
+Thirty days is not a subset of the tree. Long-lived sessions keep old transcripts freshly
+modified, so the modification-time filter stops filtering well before a month and the window
+is effectively everything -- around 1600 files and 600MB on the machine this was measured
+on. So the scan runs on a thread of its own and publishes snapshots; a collection tick reads
+the latest one and never waits.
+
+It also checkpoints itself to `<cache dir>/mon/claude-history.json` -- roughly 3MB -- so
+only the first run pays for a cold read. Measured on that tree: **600ms** cold across 18
+slices, then **11ms** to restore and caught up on the first refresh. Losing or deleting the
+checkpoint costs one cold read and nothing else, which is what a cache directory is for.
+
+While a cold read is in progress the legend row reads `scanning transcripts... 62%`, because
+a graph showing a tenth of the data looks exactly like one showing all of it.
 
 ### These totals are about half what `/status` shows, and this side is correct
 
 Claude Code writes **one transcript record per content block** -- thinking, text, tool use
 -- and each of them repeats the same cumulative `usage` object for the message. Its own
-rollup at `~/.claude/stats-cache.json` sums every record, so it double-counts any message
-with more than one block. Measured against a correct dedup on a real corpus, the ratio is
-almost exactly **2.00x** overall, and per model-day it runs between 1.6x and 2.2x.
+rollup at `~/.claude/stats-cache.json` sums every record with no dedup, so it double-counts
+any message with more than one block.
+
+That is not inference. `dailyModelTokens` in that file matches a naive sum over both
+transcript levels **byte for byte**, on every day and every model checked:
+
+| Day (UTC) | Model | `/status` | `mon` | Ratio |
+| --- | --- | --- | --- | --- |
+| 2026-08-20 | Sonnet | 1,674,475,203 | 827,311,318 | 2.02x |
+| 2026-08-20 | Fable | 494,410,640 | 248,313,944 | 1.99x |
+| 2026-08-20 | Opus | 182,645,658 | 97,066,122 | 1.88x |
+| 2026-08-23 | Sonnet | 1,019,556,621 | 556,491,496 | 1.83x |
+| 2026-08-23 | Opus | 106,826,017 | 57,625,136 | 1.85x |
 
 `claude-metrics` counts a message's request-level fields (`input_tokens`,
 `cache_read_input_tokens`, `cache_creation_input_tokens`) exactly once, keyed on
 `requestId` + `message.id`, and tracks `output_tokens` as a high-water mark because it grows
-with each block. So do not reconcile these two screens -- they are answering the same
-question and only one of them is deduping.
+with each block. So do not try to reconcile the two screens -- they answer the same question
+and only one of them is deduping.
+
+`cargo run -p claude-metrics --example history_scan --release` prints the per-day per-model
+totals if you want to check them against your own count.
 
 That file is also UTC-keyed, daily-only, and only recomputed when you open the Stats screen,
 which is a second reason it is not used as a source here.

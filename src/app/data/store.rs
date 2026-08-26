@@ -109,6 +109,8 @@ pub struct InnerData {
     pub(crate) claude_rate_history: Vec<claude_metrics::Bucket>,
     /// Families that contributed anything in the retained window, in a stable draw order.
     pub(crate) claude_history_families: Vec<claude_metrics::ModelFamily>,
+    /// How far through a cold read the transcript scan is, or `None` once caught up.
+    pub(crate) claude_history_progress: Option<f64>,
     #[cfg(feature = "battery")]
     pub(crate) battery_harvest: Vec<batteries::BatteryData>,
 
@@ -138,6 +140,7 @@ impl Default for InnerData {
             claude_history_range: claude_metrics::StatsRange::default(),
             claude_rate_history: Vec::default(),
             claude_history_families: Vec::default(),
+            claude_history_progress: None,
             #[cfg(feature = "battery")]
             battery_harvest: Vec::default(),
             #[cfg(feature = "zfs")]
@@ -263,6 +266,10 @@ impl InnerData {
                 self.claude_rate_history = claude.rate_history;
                 self.claude_history_families = claude.history_families;
             }
+
+            // Not inside the guard above: on a cold start there are no buckets *yet*, and
+            // saying so is the whole point of having a progress figure.
+            self.claude_history_progress = claude.history_progress;
         }
 
         if used_widgets.use_power {

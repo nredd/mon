@@ -56,6 +56,9 @@ impl Painter {
 
             let use_log = widget_state.use_log;
             let footer_rows = claude_series::footer_rows(draw_loc);
+            let scan_note = shared_data
+                .claude_history_progress
+                .map(claude_series::scan_note);
 
             let series = BucketSeries::build(&buckets, &families, range.bucket(), 1.0);
 
@@ -146,7 +149,7 @@ impl Painter {
                 Some(range),
                 self.styles.widget_title_style,
                 self.styles.graph_legend_style,
-                None,
+                scan_note.as_deref(),
             );
         }
 

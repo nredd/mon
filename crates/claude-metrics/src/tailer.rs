@@ -42,6 +42,27 @@ impl Tailer {
         }
     }
 
+    /// Rebuild a tailer from a checkpoint taken in an earlier run.
+    ///
+    /// The checkpoint is not trusted: the next read re-stats the file and restarts from the
+    /// top if the inode has changed or the file has shrunk below the offset, exactly as it
+    /// would for a checkpoint taken a second ago. So a stale, corrupt, or hand-edited
+    /// checkpoint costs a re-read rather than wrong data.
+    #[must_use]
+    pub fn restore(path: impl Into<PathBuf>, offset: u64, inode: Option<u64>) -> Self {
+        Self {
+            path: path.into(),
+            offset,
+            inode,
+        }
+    }
+
+    /// The file identity this tailer last saw, for checkpointing.
+    #[must_use]
+    pub fn inode(&self) -> Option<u64> {
+        self.inode
+    }
+
     /// The file being tailed.
     #[must_use]
     pub fn path(&self) -> &Path {
@@ -54,6 +75,15 @@ impl Tailer {
         self.offset
     }
 
+    /// Bytes appended but not yet read, or zero if the file cannot be stat'd.
+    ///
+    /// Used to size a cold read before it starts, so progress can be reported as a
+    /// fraction rather than as an open-ended "still working".
+    #[must_use]
+    pub fn outstanding(&self) -> u64 {
+        std::fs::metadata(&self.path).map_or(0, |meta| meta.len().saturating_sub(self.offset))
+    }
+
     /// Read whatever has been appended since the last call.
     ///
     /// Returns complete lines only. A partial trailing line is left unconsumed so the next
@@ -63,6 +93,25 @@ impl Tailer {
     /// A missing or unreadable file yields no lines rather than an error: transcripts
     /// appear and disappear as sessions come and go, and that is not a failure.
     pub fn read_new(&mut self) -> (Vec<String>, ReadKind) {
+        self.read_filtered(u64::MAX, |_| true)
+    }
+
+    /// Read appended lines, consuming at most `max_bytes` and keeping only what `keep`
+    /// accepts.
+    ///
+    /// `keep` sees the raw bytes before any UTF-8 conversion, which is where the win is: a
+    /// transcript is overwhelmingly lines with no usage object on them, and rejecting those
+    /// on a substring test skips both the allocation and the JSON parse. On a real tree
+    /// that is most of the bytes.
+    ///
+    /// `max_bytes` bounds one call without losing anything -- the offset advances over
+    /// everything consumed, so the next call resumes where this one stopped. It is what
+    /// lets a cold read of a very large tree be spread over several passes and report
+    /// progress instead of blocking until it is done.
+    pub fn read_filtered<F>(&mut self, max_bytes: u64, keep: F) -> (Vec<String>, ReadKind)
+    where
+        F: Fn(&[u8]) -> bool,
+    {
         let Ok(metadata) = std::fs::metadata(&self.path) else {
             return (Vec::new(), ReadKind::Appended);
         };
@@ -102,8 +151,13 @@ impl Tailer {
 
         let mut lines = Vec::new();
         let mut buffer = Vec::new();
+        let mut consumed = 0u64;
 
         loop {
+            if consumed >= max_bytes {
+                break;
+            }
+
             buffer.clear();
             match reader.read_until(b'\n', &mut buffer) {
                 // EOF, or a read error partway through a live file. Either way there is
@@ -116,7 +170,11 @@ impl Tailer {
                     }
 
                     self.offset = self.offset.saturating_add(read as u64);
-                    lines.push(String::from_utf8_lossy(&buffer).trim_end().to_owned());
+                    consumed = consumed.saturating_add(read as u64);
+
+                    if keep(&buffer) {
+                        lines.push(String::from_utf8_lossy(&buffer).trim_end().to_owned());
+                    }
                 }
             }
         }
