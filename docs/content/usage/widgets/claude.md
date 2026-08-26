@@ -5,24 +5,31 @@
     These widgets are specific to [mon](https://github.com/nredd/mon) and are not part of
     upstream bottom.
 
-Three widgets read [Claude Code](https://claude.com/claude-code) activity off the local
+Two widgets read [Claude Code](https://claude.com/claude-code) activity off the local
 `~/.claude` tree:
 
 - `claude` -- a table of live sessions
-- `claude_graph` -- token throughput right now, by model family
 - `claude_stats` -- token spend over a selectable range, by model family
 
-None of them are in the default layout. Add them to your
+!!! note "`claude_graph` was removed"
+
+    It drew tokens per second over a fixed ten-minute window. Once `claude_stats` gained
+    selectable ranges its `30m` view answered the same question from the same data, so the
+    second graph was two copies of one picture. A layout still naming `claude_graph` is now
+    an unknown-widget error rather than being quietly mapped onto `claude_stats`, which
+    would leave two identical graphs stacked with no way to tell why.
+
+Neither is in the default layout. Add them to your
 [layout](../../configuration/config-file/layout.md) to use them, or start from
 [`sample_configs/claude_config.toml`](https://github.com/nredd/mon/blob/main/sample_configs/claude_config.toml),
-which draws all three and nothing else:
+which draws both and nothing else:
 
 ```console
 $ mon -C sample_configs/claude_config.toml --pixel_graphs kitty
 ```
 
-That config also carries the family colour list, the two `use_log` toggles, and the starting
-range inline, so it is a reasonable place to retune them.
+That config also carries the family colour list, the log toggle, and the starting range
+inline, so it is a reasonable place to retune them.
 
 ## Sessions table
 
@@ -90,34 +97,6 @@ lines, which is still readable -- the same trade the pixel path makes everywhere
 This is the only part of a Claude harvest that reads transcripts outside the live sessions,
 so it is skipped entirely unless the widget is in your layout -- not even the thread that
 does it gets started.
-
-## Token graph
-
-The same graph over a fixed ten-minute window at a ten-second bucket, divided by the bucket
-width: what is being spent **right now**, in tokens per second, by family. Same outlines,
-same inline legend, no selector row -- its window is fixed, and the stats graph beside it is
-the one that answers longer spans.
-
-The y-axis is **linear by default**; `l` toggles it, or set `use_log = true`.
-
-!!! warning "This graph used to be wrong. If you are upgrading, that is why it changed."
-
-    It differenced `totals_by_model()` -- cumulative tokens across the sessions currently in
-    the registry -- against the previous tick, keyed by model family. Two things made that
-    wrong rather than merely coarse:
-
-    - The "first sighting, do not compute a rate" guard keyed on the *family*, which is
-      already present from every other session. So a new or resumed session -- whose
-      accumulator is rebuilt from zero with its tailer at offset zero, re-reading the whole
-      transcript -- put its entire lifetime token count into one tick's delta. Every family
-      in that transcript spiked together, and since the totals are cache-inclusive that was
-      routinely millions of tokens per second.
-    - The session registry is written by a running process and can be read mid-write. A
-      single torn read dropped a session for one tick and brought it back backfilled on the
-      next, which is the same spike on a loop.
-
-    It now reads the same bucketed history the stats graph does, which attributes every
-    record by the record's own timestamp, so a backfill lands in the past where it belongs.
 
 ## Where the numbers come from
 
@@ -229,14 +208,18 @@ Without it the `Cost` and `Ctx` columns read `N/A` and everything else still wor
 
 ## Key bindings
 
-| Binding   | Widget         | Action                                       |
-| --------- | -------------- | -------------------------------------------- |
-| ++t++     | `claude_stats` | Cycle the range, wrapping                    |
-| ++plus++  | `claude_stats` | Shorten the range, stopping at `30m`         |
-| ++minus++ | `claude_stats` | Lengthen the range, stopping at `30d`        |
-| ++equal++ | `claude_stats` | Back to the configured `stats_range`         |
-| ++l++     | both graphs    | Toggle the logarithmic y-axis                |
+All of these act on `claude_stats`, and **only when it has focus**. Move focus with the
+arrow keys, ++shift+arrow++, `HJKL`, or by clicking the widget; the layout's `default = true`
+widget is the one focused at launch.
 
-++t++ is shift-`t`. On `claude_stats` the zoom keys move between *ranges* rather than
-rescaling the axis -- its axis span has to match the span of the buckets the collector
-rolled up, so it is not a free choice.
+| Binding   | Action                                             |
+| --------- | -------------------------------------------------- |
+| ++t++     | Cycle the range, wrapping `30m` -> ... -> `30d` -> `30m` |
+| ++plus++  | Shorten the range, stopping at `30m`               |
+| ++minus++ | Lengthen the range, stopping at `30d`              |
+| ++equal++ | Back to the configured `stats_range`               |
+| ++l++     | Toggle the logarithmic y-axis                      |
+
+++t++ is shift-`t`. The zoom keys move between *ranges* rather than rescaling the axis: its
+span has to match the span of the buckets the collector rolled up, so it is not a free
+choice.

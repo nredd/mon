@@ -182,7 +182,7 @@ pub(crate) const CLAUDE_HELP_TEXT: [&str; 7] = [
     "+                       Shorten the stats graph's range",
     "-                       Lengthen the stats graph's range",
     "=                       Return the stats graph to its configured range",
-    "l                       Toggle the logarithmic y-axis on either Claude graph",
+    "l                       Toggle the logarithmic y-axis on the stats graph",
     "Note: the stats graph's axis tracks its range, so + and - move between ranges",
 ];
 
@@ -482,11 +482,9 @@ pub(crate) const CONFIG_TEXT: &str = r#"# This is a default config file for bott
 
 # Claude widget configuration
 #[claude]
-# Logarithmic y-axis on the token-rate graph. Defaults to false -- the graph compares model
-# families by height, and on a log axis a band twice as tall is not twice the tokens.
-#use_log = false
-
-# The same, for the token-history stats graph.
+# Logarithmic y-axis on the token-history stats graph. Defaults to false -- the graph
+# compares model families by height, and on a log axis a band twice as tall is not twice
+# the tokens.
 #stats_use_log = false
 
 # How far back the stats graph starts out reaching. One of "30m", "2h", "8h", "24h", "7d",

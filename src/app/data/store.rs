@@ -105,8 +105,6 @@ pub struct InnerData {
     /// and without this the first frame after one would label the old buckets with the new
     /// range's span.
     pub(crate) claude_history_range: claude_metrics::StatsRange,
-    /// The same history at a short window and a fine grid, for the token-rate graph.
-    pub(crate) claude_rate_history: Vec<claude_metrics::Bucket>,
     /// Families that contributed anything in the retained window, in a stable draw order.
     pub(crate) claude_history_families: Vec<claude_metrics::ModelFamily>,
     /// How far through a cold read the transcript scan is, or `None` once caught up.
@@ -138,7 +136,6 @@ impl Default for InnerData {
             claude_rate_limits: None,
             claude_history: Vec::default(),
             claude_history_range: claude_metrics::StatsRange::default(),
-            claude_rate_history: Vec::default(),
             claude_history_families: Vec::default(),
             claude_history_progress: None,
             #[cfg(feature = "battery")]
@@ -263,7 +260,6 @@ impl InnerData {
             if !claude.history.is_empty() {
                 self.claude_history = claude.history;
                 self.claude_history_range = claude.history_range;
-                self.claude_rate_history = claude.rate_history;
                 self.claude_history_families = claude.history_families;
             }
 

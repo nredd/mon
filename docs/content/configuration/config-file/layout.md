@@ -51,7 +51,6 @@ The following `type` values are supported:
 | `"disk_io_graph"`                   | Disk I/O graph           |
 | `"power"`                           | Power draw graph         |
 | `"claude"`                          | Claude sessions table    |
-| `"claude_graph"`                    | Claude token-rate graph  |
 | `"claude_stats"`                    | Claude token history     |
 | `"empty"`                           | An empty space           |
 | `"batt", "battery"`                 | Battery statistics       |

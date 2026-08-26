@@ -67,8 +67,6 @@ pub struct ClaudeData {
     /// Carried alongside the buckets rather than read back from the widget, so a snapshot
     /// taken just before a range switch cannot be drawn against the new range's axis.
     pub history_range: StatsRange,
-    /// The same history at a short window and a fine grid, for the token-rate graph.
-    pub rate_history: Vec<Bucket>,
     /// Families that contributed anything in the retained window, in a stable draw order.
     pub history_families: Vec<ModelFamily>,
     /// How far through a cold read the scan is, or `None` once it has caught up.
@@ -129,15 +127,6 @@ fn checkpoint_path() -> Option<PathBuf> {
     Some(dirs::cache_dir()?.join("mon").join("claude-history.json"))
 }
 
-/// How far back the token-rate graph reaches.
-///
-/// Fixed rather than selectable: this graph answers "what is being spent right now", and
-/// the stats graph next to it already answers the same question over longer spans.
-pub const RATE_WINDOW: Duration = Duration::from_secs(10 * 60);
-
-/// The rate graph's grid, which is the finest the history holds.
-pub const RATE_BUCKET: Duration = HISTORY_BUCKET;
-
 /// Owns the reader and turns a refresh into a [`ClaudeData`] snapshot.
 #[derive(Debug)]
 pub struct ClaudeCollector {
@@ -184,8 +173,6 @@ impl ClaudeCollector {
                         checkpoint_path(),
                         history_window(),
                         HISTORY_BUCKET,
-                        RATE_WINDOW,
-                        RATE_BUCKET,
                         range,
                     )
                 })
@@ -243,7 +230,6 @@ impl ClaudeCollector {
             rate_limits,
             history: snapshot.history,
             history_range: snapshot.range,
-            rate_history: snapshot.rate,
             history_families: snapshot.families,
             history_progress: snapshot.progress,
         })

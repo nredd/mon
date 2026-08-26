@@ -8,26 +8,28 @@
 
 ## Config options
 
-Set under `[claude]`. These cover the `claude` table, the `claude_graph` rate graph, and the
-`claude_stats` history graph.
+Set under `[claude]`. These cover the `claude` table and the `claude_stats` history graph.
 
 | Config option     | Type                                                   | Default | Behaviour                                        |
 | ----------------- | ------------------------------------------------------ | ------- | ------------------------------------------------ |
-| `use_log`         | Boolean                                                | `false` | Logarithmic y-axis on the token-rate graph.      |
 | `stats_use_log`   | Boolean                                                | `false` | Logarithmic y-axis on the stats graph.           |
 | `stats_range`     | String (one of ["30m", "2h", "8h", "24h", "7d", "30d"]) | `2h`   | How far back the stats graph starts out reaching. |
 | `legend_position` | String (one of ["none", "top-left", "top", "top-right", "left", "right", "bottom-left", "bottom", "bottom-right"]) | `top-right` | Where to place the graph legend. |
 
-Both `use_log` flags default off. The graphs exist to compare model families against each
-other over time, and on a log axis a band twice as tall is not twice the tokens. Turn one on
-for a window where a single family genuinely dwarfs the rest badly enough that the others
-sit flat on the floor -- or press `l`, which toggles the focused graph at runtime.
+`stats_use_log` defaults off. The graph exists to compare model families against each other
+over time, and on a log axis a band twice as tall is not twice the tokens. Turn it on for a
+window where a single family genuinely dwarfs the rest badly enough that the others sit flat
+on the floor -- or press `l`, which toggles it at runtime.
+
+`use_log` is gone along with the `claude_graph` widget it belonged to. It is deliberately
+*not* reused as a shorter spelling of `stats_use_log`: a config carrying the old key would
+otherwise silently get the opposite of what it asked for.
 
 `stats_range` only sets where the graph *starts*. `T` cycles it, `+`/`-` step it, and `=`
 comes back here. An unrecognised value is a config error rather than a silent fallback.
 
-`legend_position` now only affects the sessions table; both graphs draw an inline legend in
-a reserved row under the plot instead of a box floating inside it.
+`legend_position` now only affects the sessions table; the stats graph draws an inline
+legend in a reserved row under the plot instead of a box floating inside it.
 
 ## Styling
 
@@ -37,7 +39,6 @@ See [the styling page](styling.md#claude) for `[styles.claude]`.
 
 ```toml
 [claude]
-use_log = false
 stats_use_log = false
 stats_range = "2h"
 

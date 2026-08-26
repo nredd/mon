@@ -176,11 +176,11 @@
       }
     },
     "ClaudeConfig": {
-      "description": "Claude widget configuration.\n\nCovers the sessions table (`claude`), the token-rate graph (`claude_graph`), and the\ntoken-history stats graph (`claude_stats`).",
+      "description": "Claude widget configuration.\n\nCovers the sessions table (`claude`) and the token-history stats graph\n(`claude_stats`).",
       "type": "object",
       "properties": {
         "legend_position": {
-          "description": "Where to position the graph legend within the widget.\n\nOnly the sessions table reads this now -- both graphs draw an inline legend below\nthe plot instead of a box floating inside it.",
+          "description": "Where to position the graph legend within the widget.\n\nOnly the sessions table reads this now -- the stats graph draws an inline legend\nbelow the plot instead of a box floating inside it.",
           "type": [
             "string",
             "null"
@@ -194,14 +194,7 @@
           ]
         },
         "stats_use_log": {
-          "description": "Whether the token-history stats graph uses a logarithmic y-axis. Defaults to false.",
-          "type": [
-            "boolean",
-            "null"
-          ]
-        },
-        "use_log": {
-          "description": "Whether the token-rate graph uses a logarithmic y-axis. Defaults to false.\n\nOff by default. The graph exists to compare families against each other over time,\nand on a log axis a band twice as tall is not twice the tokens. Turn it on for a\nwindow where one family genuinely dwarfs the rest badly enough that the others sit\nflat on the floor.",
+          "description": "Whether the stats graph uses a logarithmic y-axis. Defaults to false.\n\nOff by default. The graph exists to compare model families against each other over\ntime, and on a log axis a band twice as tall is not twice the tokens. Turn it on for\na window where one family genuinely dwarfs the rest badly enough that the others sit\nflat on the floor.\n\nNOTE(redd): still named for the widget rather than shortened to `use_log`. The old\n`use_log` belonged to the token-rate graph, which is gone; reusing the name would\nsilently give a stale config the opposite of what it asked for.",
           "type": [
             "boolean",
             "null"

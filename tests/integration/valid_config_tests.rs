@@ -50,6 +50,18 @@ fn run_and_kill_cfg(path: &str) {
 /// the process staying alive, which is what it takes to catch a widget that parses fine but
 /// never gets dispatched to.
 fn run_and_capture(args: &[&str]) -> String {
+    capture(args, None).0
+}
+
+/// Run `mon`, optionally press a key partway through, and return what it drew.
+///
+/// The second element is only what arrived *after* the keypress, which is what a test about
+/// a key has to look at: ratatui re-emits changed cells, so a key that moves a highlight
+/// shows up as those cells and nothing else. Asserting on the whole frame would pass
+/// whether or not the key did anything.
+fn capture(args: &[&str], key: Option<&str>) -> (String, String) {
+    use std::io::Write as _;
+
     let (master, mut handle) = spawn_mon_in_pty(args);
     let reader = master.try_clone_reader().unwrap();
 
@@ -57,7 +69,7 @@ fn run_and_capture(args: &[&str]) -> String {
     // waits for the terminal to answer; closing the write side means nothing ever can, and
     // the app sits there having drawn only its init sequence. That is what a bound `_`
     // binding was doing here -- `let _ = ...` drops at the end of the statement.
-    let _writer = master.take_writer().unwrap();
+    let mut writer = master.take_writer().unwrap();
 
     // Drained on a thread. A single `read` returns whatever one chunk happens to hold,
     // which at startup is the terminal setup and nothing else; the frame arrives later.
@@ -80,6 +92,11 @@ fn run_and_capture(args: &[&str]) -> String {
         }
     });
 
+    let snapshot = || match collected.lock() {
+        Ok(buf) => buf.clone(),
+        Err(poisoned) => poisoned.into_inner().clone(),
+    };
+
     // Long enough for a first collection tick and a draw.
     thread::sleep(Duration::from_millis(2500));
 
@@ -87,14 +104,30 @@ fn run_and_capture(args: &[&str]) -> String {
         panic!("program terminated unexpectedly (exit status: {exit:?})");
     }
 
+    let before = snapshot().len();
+
+    if let Some(key) = key {
+        writer.write_all(key.as_bytes()).unwrap();
+        writer.flush().unwrap();
+
+        // A range key travels to the collection thread, waits for the scan to roll the
+        // history up onto the new span, and only then comes back as a redraw.
+        thread::sleep(Duration::from_millis(2500));
+    }
+
+    let buf = snapshot();
     handle.kill().unwrap();
 
-    let buf = match collected.lock() {
-        Ok(buf) => buf.clone(),
-        Err(poisoned) => poisoned.into_inner().clone(),
-    };
+    (
+        String::from_utf8_lossy(&buf).into_owned(),
+        String::from_utf8_lossy(&buf[before..]).into_owned(),
+    )
+}
 
-    String::from_utf8_lossy(&buf).into_owned()
+/// Strip terminal escape sequences, leaving the characters that were drawn.
+fn drawn_text(raw: &str) -> String {
+    let escapes = regex::Regex::new(r"\x1b\[[0-9;?]*[a-zA-Z]").unwrap();
+    escapes.replace_all(raw, "").into_owned()
 }
 
 #[test]
@@ -362,10 +395,6 @@ fn test_claude_widgets_render() {
          `canvas.rs`. Rendered output was:\n{rendered}"
     );
     assert!(
-        rendered.contains("Claude Tokens"),
-        "the token-rate graph did not draw its title. Rendered output was:\n{rendered}"
-    );
-    assert!(
         rendered.contains("Claude Stats"),
         "the stats graph did not draw its title. Rendered output was:\n{rendered}"
     );
@@ -391,6 +420,36 @@ fn test_claude_widgets_render() {
     assert!(
         clock.is_match(&rendered),
         "no clock-time x-axis label. Rendered output was:\n{rendered}"
+    );
+}
+
+/// Pressing a range key has to reach the collection thread and come back as a redraw.
+///
+/// This is the one test that ties the whole path together: the key handler's focus check,
+/// the modifier gate, `CollectionThreadEvent::SetClaudeStatsRange`, the scan thread rolling
+/// the history up onto the new span, and the footer drawing the new highlight. Every piece
+/// of it is unit-tested in isolation and none of that would notice the wiring being wrong.
+#[test]
+fn a_range_key_moves_the_stats_graph_to_another_span() {
+    // The sample layout starts on `2h` and focuses the graph, so `+` shortens it to `30m`.
+    let (_, after) = capture(&["-C", "./sample_configs/claude_config.toml"], Some("+"));
+    let redrawn = drawn_text(&after);
+
+    assert!(
+        redrawn.contains("30m"),
+        "`30m` never took the highlight. Redraw after the keypress was:\n{redrawn}"
+    );
+    assert!(
+        redrawn.contains("2h"),
+        "`2h` never gave up the highlight. Redraw after the keypress was:\n{redrawn}"
+    );
+
+    // The axis span moved with it, which is the half that proves the *data* followed the
+    // key rather than only the selector row repainting.
+    let clock = regex::Regex::new(r"[0-2][0-9]:[0-5][0-9]").unwrap();
+    assert!(
+        clock.is_match(&redrawn),
+        "the x-axis did not relabel. Redraw after the keypress was:\n{redrawn}"
     );
 }
 

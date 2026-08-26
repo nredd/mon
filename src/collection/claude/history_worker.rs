@@ -53,8 +53,6 @@ pub(super) struct HistorySnapshot {
     /// The range `history` was rolled up onto, so the painter labels what it is drawing
     /// rather than what has since been asked for.
     pub(super) range: StatsRange,
-    /// The same history at the rate graph's fixed short window and fine grid.
-    pub(super) rate: Vec<Bucket>,
     /// Families that contributed anything in the retained window.
     pub(super) families: Vec<ModelFamily>,
     /// How far through a cold read, or `None` once caught up.
@@ -77,7 +75,7 @@ impl HistoryWorker {
     /// Start scanning `root`, rolling up onto `range` until told otherwise.
     pub(super) fn spawn(
         root: PathBuf, checkpoint: Option<PathBuf>, window: Duration, bucket: Duration,
-        rate_window: Duration, rate_bucket: Duration, range: StatsRange,
+        range: StatsRange,
     ) -> Self {
         let (requests, receiver) = channel();
         let snapshot = Arc::new(Mutex::new(HistorySnapshot {
@@ -94,8 +92,6 @@ impl HistoryWorker {
             let mut worker = Scanner {
                 history: TokenHistory::new(root, window, bucket),
                 checkpoint,
-                rate_window,
-                rate_bucket,
                 range,
                 published,
                 last_saved: None,
@@ -135,8 +131,6 @@ impl HistoryWorker {
 struct Scanner {
     history: TokenHistory,
     checkpoint: Option<PathBuf>,
-    rate_window: Duration,
-    rate_bucket: Duration,
     range: StatsRange,
     published: Arc<Mutex<HistorySnapshot>>,
     last_saved: Option<Instant>,
@@ -182,7 +176,6 @@ impl Scanner {
                 .history
                 .aggregate(self.range.window(), self.range.bucket()),
             range: self.range,
-            rate: self.history.aggregate(self.rate_window, self.rate_bucket),
             families: self.history.families(),
             progress: self.history.warmup_progress(),
         };

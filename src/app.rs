@@ -237,10 +237,6 @@ impl App {
         for widget_state in self.states.power_graph_state.widget_states.values_mut() {
             widget_state.graph.state_mut().reset_zoom();
         }
-
-        for widget_state in self.states.claude_graph_state.widget_states.values_mut() {
-            widget_state.graph.state_mut().reset_zoom();
-        }
     }
 
     pub fn should_get_widget_bounds(&self) -> bool {
@@ -2060,14 +2056,6 @@ impl App {
             {
                 Some(widget_state.graph.state_mut())
             }
-            BottomWidgetType::ClaudeGraph
-                if let Some(widget_state) = self
-                    .states
-                    .claude_graph_state
-                    .get_mut_widget_state(self.current_widget.widget_id) =>
-            {
-                Some(widget_state.graph.state_mut())
-            }
             _ => None,
         }
     }
@@ -2102,22 +2090,18 @@ impl App {
         })
     }
 
-    /// Flip the focused Claude graph between its linear and logarithmic y-axis.
+    /// Flip the Claude stats graph between its linear and logarithmic y-axis.
     fn toggle_claude_log(&mut self) {
-        let id = self.current_widget.widget_id;
+        if self.current_widget.widget_type != BottomWidgetType::ClaudeStats {
+            return;
+        }
 
-        match self.current_widget.widget_type {
-            BottomWidgetType::ClaudeStats => {
-                if let Some(state) = self.states.claude_stats_state.get_mut_widget_state(id) {
-                    state.toggle_log();
-                }
-            }
-            BottomWidgetType::ClaudeGraph => {
-                if let Some(state) = self.states.claude_graph_state.get_mut_widget_state(id) {
-                    state.use_log = !state.use_log;
-                }
-            }
-            _ => {}
+        if let Some(state) = self
+            .states
+            .claude_stats_state
+            .get_mut_widget_state(self.current_widget.widget_id)
+        {
+            state.toggle_log();
         }
     }
 

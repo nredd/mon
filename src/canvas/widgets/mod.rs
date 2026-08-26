@@ -1,6 +1,5 @@
 use crate::{collection::network::NetworkHarvest, utils::data_units::convert_bytes};
 
-pub mod claude_graph;
 pub(crate) mod claude_series;
 pub mod claude_stats;
 pub mod claude_table;

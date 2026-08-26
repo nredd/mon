@@ -1,8 +1,7 @@
 # A Claude-Code-only layout for mon.
 #
-# Everything system-related is dropped. What is left is the three Claude widgets, stacked
-# largest-first: the bucketed token history (mon's answer to Claude Code's own `/status`
-# Models tab), the live token-rate graph underneath it, and the session table at the bottom.
+# Everything system-related is dropped. What is left is the bucketed token history (mon's
+# answer to Claude Code's own `/status` Models tab) over the session table.
 #
 # NOTE: the totals here read roughly *half* what `/status` shows, and this side is the
 # correct one -- see `docs/content/usage/widgets/claude.md`.
@@ -36,10 +35,9 @@ table_gap = "line"
 read_only = true
 
 [claude]
-# Both graphs stay linear. They exist to compare families against each other over time,
-# and on a log axis a band twice as tall is not twice the tokens. `l` flips either one at
-# runtime when a single family genuinely dwarfs the rest.
-use_log = false
+# Linear. The graph exists to compare families against each other over time, and on a log
+# axis a band twice as tall is not twice the tokens. `l` flips it at runtime when a single
+# family genuinely dwarfs the rest.
 stats_use_log = false
 
 # Where the history graph starts. `T` cycles it; `+`/`-` step it; `=` comes back here.
@@ -65,19 +63,18 @@ legend_text = { colour = "#b4b4b4" }
 [styles.tables]
 headers = { colour = "#d95926", bold = true }
 
-# Layout: history on top, rate underneath, sessions at the bottom.
+# Layout: history on top, sessions at the bottom.
+#
+# The graph is the default widget so its range keys work on launch -- `T`, `+`/`-`, and `=`
+# only reach the widget that has focus, and starting on the table means the first thing you
+# press does nothing. Move focus with the arrow keys or by clicking.
 [[row]]
-ratio = 44
+ratio = 68
 [[row.child]]
 type = "claude_stats"
+default = true
 
 [[row]]
 ratio = 32
 [[row.child]]
-type = "claude_graph"
-
-[[row]]
-ratio = 24
-[[row.child]]
 type = "claude"
-default = true

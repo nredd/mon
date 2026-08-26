@@ -941,7 +941,6 @@ pub enum BottomWidgetType {
     DiskIoGraph,
     Power,
     Claude,
-    ClaudeGraph,
     ClaudeStats,
     BasicCpu,
     BasicMem,
@@ -960,18 +959,17 @@ impl BottomWidgetType {
         use BottomWidgetType::*;
         matches!(
             self,
-            Cpu | Net | Mem | TempGraph | DiskIoGraph | Power | ClaudeGraph | ClaudeStats
+            Cpu | Net | Mem | TempGraph | DiskIoGraph | Power | ClaudeStats
         )
     }
 
     /// Whether this widget draws the rolling token history.
     ///
-    /// Both Claude graphs do: the stats graph rolls it up onto the selected range, and the
-    /// rate graph divides a short fine window by the bucket width. It lives here rather
-    /// than being spelled out at the one call site because getting it wrong is invisible --
-    /// the widget still draws its border and its title, just never any data.
+    /// It lives here rather than being spelled out at the one call site because getting it
+    /// wrong is invisible -- the widget still draws its border and its title, just never
+    /// any data.
     pub fn needs_claude_history(&self) -> bool {
-        matches!(self, Self::ClaudeGraph | Self::ClaudeStats)
+        matches!(self, Self::ClaudeStats)
     }
 
     pub fn get_pretty_name(&self) -> &str {
@@ -990,7 +988,6 @@ impl BottomWidgetType {
             // that reason -- left alone here to keep this diff to the power widget.
             Power => "Power",
             Claude => "Claude",
-            ClaudeGraph => "Claude Tokens",
             ClaudeStats => "Claude Stats",
             _ => "",
         }
@@ -1013,7 +1010,6 @@ impl std::str::FromStr for BottomWidgetType {
             "disk_io_graph" => Ok(BottomWidgetType::DiskIoGraph),
             "power" => Ok(BottomWidgetType::Power),
             "claude" => Ok(BottomWidgetType::Claude),
-            "claude_graph" => Ok(BottomWidgetType::ClaudeGraph),
             "claude_stats" => Ok(BottomWidgetType::ClaudeStats),
             "empty" => Ok(BottomWidgetType::Empty),
             #[cfg(feature = "battery")]
@@ -1046,7 +1042,6 @@ Supported widget names:
 +--------------------------------+
 |             claude             |
 +--------------------------------+
-|          claude_graph          |
 +--------------------------------+
 |          claude_stats          |
 +--------------------------------+
@@ -1084,7 +1079,6 @@ Supported widget names:
 +--------------------------------+
 |             claude             |
 +--------------------------------+
-|          claude_graph          |
 +--------------------------------+
 |          claude_stats          |
 +--------------------------------+
@@ -1157,39 +1151,35 @@ mod added_widget_tests {
     #[test]
     fn claude_widgets_are_registered_everywhere_a_catch_all_would_hide() {
         let table: BottomWidgetType = "claude".parse().expect("`claude` must parse");
-        let graph: BottomWidgetType = "claude_graph".parse().expect("`claude_graph` must parse");
+        let stats: BottomWidgetType = "claude_stats".parse().expect("`claude_stats` must parse");
 
         assert_eq!(table, BottomWidgetType::Claude);
-        assert_eq!(graph, BottomWidgetType::ClaudeGraph);
+        assert_eq!(stats, BottomWidgetType::ClaudeStats);
 
         assert!(
             !table.is_widget_graph(),
             "the sessions table is a table, not a graph -- it must not get timeseries state"
         );
         assert!(
-            graph.is_widget_graph(),
-            "the token-rate graph must count as a graph or it gets no timeseries state"
-        );
-
-        let stats: BottomWidgetType = "claude_stats".parse().expect("`claude_stats` must parse");
-        assert_eq!(stats, BottomWidgetType::ClaudeStats);
-        assert!(
             stats.is_widget_graph(),
             "the stats graph must count as a graph or it gets no timeseries state"
         );
 
         assert_eq!(table.get_pretty_name(), "Claude");
-        assert_eq!(graph.get_pretty_name(), "Claude Tokens");
         assert_eq!(stats.get_pretty_name(), "Claude Stats");
     }
 
     #[test]
-    fn both_claude_graphs_ask_for_the_token_history() {
-        // The rate graph reads the same bucketed history the stats graph does, so a layout
-        // holding it *without* its neighbour still has to start the scan. Tying that to the
-        // stats widget alone left the rate graph drawing its border, its axis, and no data
-        // at all -- which looks exactly like a quiet account.
-        assert!(BottomWidgetType::ClaudeGraph.needs_claude_history());
+    fn the_retired_rate_graph_is_no_longer_a_widget_name() {
+        // `claude_graph` drew a second view of the same history at a fixed short window,
+        // which the selectable ranges made redundant. An unknown-widget error is the right
+        // outcome for a config that still names it: quietly mapping it onto `claude_stats`
+        // would leave two identical graphs stacked with no way to tell why.
+        assert!("claude_graph".parse::<BottomWidgetType>().is_err());
+    }
+
+    #[test]
+    fn only_the_stats_graph_asks_for_the_token_history() {
         assert!(BottomWidgetType::ClaudeStats.needs_claude_history());
 
         // The sessions table reads live session state only, and the scan is the one part of
@@ -1205,18 +1195,16 @@ mod added_widget_tests {
             .expect_err("an unknown widget name must be an error")
             .to_string();
 
-        for name in ["claude_graph", "claude_stats"] {
-            assert_eq!(
-                err.matches(name).count(),
-                1,
-                "the widget-name table must list `{name}`. Error was:\n{err}"
-            );
-        }
+        assert_eq!(
+            err.matches("claude_stats").count(),
+            1,
+            "the widget-name table must list `claude_stats`. Error was:\n{err}"
+        );
 
-        // `claude` also appears inside `claude_graph` and `claude_stats`, hence three.
+        // `claude` also appears inside `claude_stats`, hence two.
         assert_eq!(
             err.matches("claude").count(),
-            3,
+            2,
             "the widget-name table must list `claude`. Error was:\n{err}"
         );
     }

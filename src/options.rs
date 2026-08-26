@@ -383,7 +383,6 @@ pub(crate) fn init_app(args: BottomArgs, config: Config) -> Result<(App, BottomL
     let mut disk_io_graph_state_map: FxHashMap<u64, DiskIoGraphWidgetState> = FxHashMap::default();
     let mut power_graph_state_map: FxHashMap<u64, PowerGraphWidgetState> = FxHashMap::default();
     let mut claude_state_map: FxHashMap<u64, ClaudeWidgetState> = FxHashMap::default();
-    let mut claude_graph_state_map: FxHashMap<u64, ClaudeGraphWidgetState> = FxHashMap::default();
     let mut claude_stats_state_map: FxHashMap<u64, ClaudeStatsWidgetState> = FxHashMap::default();
     let mut battery_state_map: FxHashMap<u64, BatteryWidgetState> = FxHashMap::default();
 
@@ -776,21 +775,6 @@ pub(crate) fn init_app(args: BottomArgs, config: Config) -> Result<(App, BottomL
                                 ClaudeWidgetState::new(&app_config_fields, &styling),
                             );
                         }
-                        ClaudeGraph => {
-                            // Linear by default. The graph exists to compare families
-                            // against each other over time, and on a log axis a band twice
-                            // as tall is not twice the tokens. `l` toggles it.
-                            let use_log = config
-                                .claude
-                                .as_ref()
-                                .and_then(|c| c.use_log)
-                                .unwrap_or(false);
-
-                            claude_graph_state_map.insert(
-                                widget.widget_id,
-                                ClaudeGraphWidgetState::new(ts_config, autohide_timer, use_log),
-                            );
-                        }
                         ClaudeStats => {
                             let use_log = config
                                 .claude
@@ -862,9 +846,7 @@ pub(crate) fn init_app(args: BottomArgs, config: Config) -> Result<(App, BottomL
         use_disk_io_graph: used_widget_set.contains(&DiskIoGraph),
         use_battery: used_widget_set.contains(&Battery),
         use_power: used_widget_set.contains(&Power),
-        use_claude: used_widget_set.contains(&Claude)
-            || used_widget_set.contains(&ClaudeGraph)
-            || used_widget_set.contains(&ClaudeStats),
+        use_claude: used_widget_set.contains(&Claude) || used_widget_set.contains(&ClaudeStats),
         use_claude_history: used_widget_set
             .iter()
             .any(BottomWidgetType::needs_claude_history),
@@ -910,7 +892,6 @@ pub(crate) fn init_app(args: BottomArgs, config: Config) -> Result<(App, BottomL
         disk_io_graph_state: DiskIoGraphStates::init(disk_io_graph_state_map),
         power_graph_state: PowerGraphStates::init(power_graph_state_map),
         claude_state: ClaudeState::init(claude_state_map),
-        claude_graph_state: ClaudeGraphStates::init(claude_graph_state_map),
         claude_stats_state: ClaudeStatsStates::init(claude_stats_state_map),
         battery_state: AppBatteryState::init(battery_state_map),
         basic_table_widget_state,
