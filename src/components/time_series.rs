@@ -53,6 +53,18 @@ impl TimeseriesState {
         self.current_display_time
     }
 
+    /// Pin the window to a span chosen outside the zoom keys.
+    ///
+    /// For a graph whose points come from fixed-width buckets, the axis span is not a
+    /// free choice -- it has to match the span the buckets cover, or the plot misreports
+    /// where in time each point sits. Setting `retention_ms` and `default_time_value` too
+    /// keeps zoom-out and reset-zoom from wandering back off that span.
+    pub(crate) fn set_window(&mut self, window_ms: u64) {
+        self.config.retention_ms = window_ms;
+        self.config.default_time_value = window_ms;
+        self.current_display_time = window_ms;
+    }
+
     /// Zoom in on the x-axis (reducing the time range shown).
     pub fn zoom_in(&mut self) {
         let new_time = self
@@ -99,6 +111,18 @@ pub struct GraphDrawCtx<'a> {
     pub is_expanded: bool,
     pub legend_position: Option<LegendPosition>,
     pub legend_constraints: Option<LegendConstraints>,
+    /// X-axis labels to draw instead of the default `{secs}s ... 0s`.
+    ///
+    /// Only the Claude graphs set this, because only they know what wall-clock time their
+    /// buckets cover. Everything else plots a rolling window of live samples where the
+    /// distance from now genuinely is the useful label.
+    pub x_labels: Option<&'a [Cow<'a, str>]>,
+    /// Rows to keep clear at the bottom of the widget, inside the border.
+    ///
+    /// Reserved through the chart's own block padding, so the plot area, the axis labels,
+    /// and the pixel image all move up together and the caller can paint into the gap
+    /// without fighting the graph for cells.
+    pub footer_rows: u16,
     /// The terminal graphics renderer, when the pixel path is enabled.
     pub pixel_renderer: Option<&'a crate::canvas::components::time_series::pixel::PixelRenderer>,
     /// Newest timestamp in the series; part of the image cache key.

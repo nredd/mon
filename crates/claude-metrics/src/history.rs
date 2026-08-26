@@ -66,6 +66,20 @@ struct Counted {
     output: u64,
     /// Which bucket it landed in, so later blocks of the same message land there too.
     bucket: u64,
+    /// Which tracked file first claimed this message. A replaced file has to forget its own
+    /// dedupe state, and this is what makes that a targeted retraction rather than a global
+    /// one -- see [`TokenHistory::refresh_at`].
+    source: SourceId,
+}
+
+/// Identifies one tracked transcript for the lifetime of a [`TokenHistory`].
+type SourceId = u32;
+
+/// One transcript being tailed, plus the id its dedupe keys are stamped with.
+#[derive(Debug)]
+struct Tracked {
+    id: SourceId,
+    tailer: Tailer,
 }
 
 /// Token usage over a rolling window, bucketed by time.
@@ -78,7 +92,9 @@ pub struct TokenHistory {
     window: Duration,
     bucket: Duration,
     buckets: BTreeMap<u64, Vec<(ModelFamily, TokenTotals)>>,
-    tailers: HashMap<PathBuf, Tailer>,
+    tailers: HashMap<PathBuf, Tracked>,
+    /// Handed out by [`TokenHistory::refresh_at`] as transcripts are first seen.
+    next_source: SourceId,
     /// Dedupe key mapped to what it contributed. Retries and resumed sessions replay
     /// identical messages, and the same message appears in both a session transcript and
     /// its subagent files.
@@ -101,6 +117,7 @@ impl TokenHistory {
             bucket,
             buckets: BTreeMap::new(),
             tailers: HashMap::new(),
+            next_source: 0,
             seen: HashMap::new(),
         }
     }
@@ -125,19 +142,31 @@ impl TokenHistory {
         let cutoff = now_ms.saturating_sub(millis(self.window));
 
         for path in transcripts_modified_since(&self.root, cutoff) {
-            let tailer = self
-                .tailers
-                .entry(path.clone())
-                .or_insert_with(|| Tailer::new(path));
+            let next_source = self.next_source;
+            let tracked = self.tailers.entry(path.clone()).or_insert_with(|| Tracked {
+                id: next_source,
+                tailer: Tailer::new(path),
+            });
 
-            let (lines, kind) = tailer.read_new();
+            if tracked.id == next_source {
+                self.next_source = self.next_source.wrapping_add(1);
+            }
+
+            let source = tracked.id;
+            let (lines, kind) = tracked.tailer.read_new();
 
             // A replaced file means the checkpoint described a file that is no longer
             // there. The buckets already built from it stay -- they describe real tokens
             // that were really spent -- but the dedupe state cannot be trusted across the
             // swap, so the replacement is read from the top.
+            //
+            // Only *this* file's keys are dropped. Clearing the whole map, which is what
+            // this did originally, is safe at a handful of tracked files and actively wrong
+            // at a few hundred: every other file's messages would be re-counted the next
+            // time any of them replayed a line, adding tokens to live buckets that were
+            // already counted.
             if kind == ReadKind::Restarted {
-                self.seen.clear();
+                self.seen.retain(|_, counted| counted.source != source);
             }
 
             for line in lines {
@@ -145,7 +174,7 @@ impl TokenHistory {
                     continue;
                 };
 
-                self.ingest(&record, cutoff);
+                self.ingest(&record, cutoff, source);
             }
         }
 
@@ -157,8 +186,8 @@ impl TokenHistory {
         self.refresh_at(now_ms());
     }
 
-    /// Fold one record into its bucket.
-    fn ingest(&mut self, record: &Record, cutoff: u64) {
+    /// Fold one record into its bucket, attributed to the transcript it came from.
+    fn ingest(&mut self, record: &Record, cutoff: u64, source: SourceId) {
         let Some(usage) = record.billable_usage() else {
             return;
         };
@@ -207,6 +236,7 @@ impl TokenHistory {
                 family,
                 output: usage.output,
                 bucket,
+                source,
             },
         );
 
@@ -242,28 +272,58 @@ impl TokenHistory {
         self.seen.retain(|_, counted| counted.bucket >= stale);
     }
 
-    /// Buckets in the window, oldest first, with empty ones filled in.
+    /// Roll the stored buckets up onto an arbitrary grid, oldest first.
     ///
-    /// The gaps matter: a graph drawn from only the buckets that saw traffic would join a
-    /// point at 10:00 straight to one at 10:40 and draw a plateau across half an hour of
-    /// silence. `now_ms` fixes the right-hand edge.
+    /// The internal grid is deliberately finer than anything drawn, so one history serves
+    /// every range a widget can ask for: a thirty-minute view and a seven-day view read the
+    /// same buckets at different step sizes. Rolling up here rather than keeping a history
+    /// per range is also what keeps the tailing cost fixed -- the transcripts are parsed
+    /// exactly once no matter how many views are on screen.
+    ///
+    /// Empty slots are filled in. The gaps matter: a graph drawn from only the buckets that
+    /// saw traffic would join a point at 10:00 straight to one at 10:40 and draw a plateau
+    /// across half an hour of silence. `now_ms` fixes the right-hand edge.
+    ///
+    /// `window` and `bucket` are clamped the same way [`TokenHistory::new`] clamps its own,
+    /// and a `bucket` finer than the stored grid cannot invent detail -- it just yields
+    /// mostly-empty slots.
     #[must_use]
-    pub fn buckets_at(&self, now_ms: u64) -> Vec<Bucket> {
-        let step = millis(self.bucket);
+    pub fn aggregate_at(&self, now_ms: u64, window: Duration, bucket: Duration) -> Vec<Bucket> {
+        let step = millis(bucket).max(1);
         let newest = now_ms - (now_ms % step);
-        let count = (millis(self.window) / step).max(1);
+        let count = (millis(window) / step).max(1);
         let oldest = newest.saturating_sub(step.saturating_mul(count - 1));
 
         (0..count)
             .map(|index| {
                 let start_ms = oldest + index * step;
+                let end_ms = start_ms.saturating_add(step);
+                let mut totals: Vec<(ModelFamily, TokenTotals)> = Vec::new();
 
-                Bucket {
-                    start_ms,
-                    totals: self.buckets.get(&start_ms).cloned().unwrap_or_default(),
+                for entries in self.buckets.range(start_ms..end_ms).map(|(_, v)| v) {
+                    for (family, add) in entries {
+                        match totals.iter_mut().find(|(seen, _)| seen == family) {
+                            Some((_, into)) => into.merge(*add),
+                            None => totals.push((*family, *add)),
+                        }
+                    }
                 }
+
+                Bucket { start_ms, totals }
             })
             .collect()
+    }
+
+    /// Roll up onto an arbitrary grid against the system clock.
+    #[must_use]
+    pub fn aggregate(&self, window: Duration, bucket: Duration) -> Vec<Bucket> {
+        self.aggregate_at(now_ms(), window, bucket)
+    }
+
+    /// Buckets on the history's own grid, oldest first, with empty ones filled in.
+    #[must_use]
+    pub fn buckets_at(&self, now_ms: u64) -> Vec<Bucket> {
+        self.aggregate_at(now_ms, self.window, self.bucket)
     }
 
     /// Buckets in the window against the system clock.
@@ -348,6 +408,143 @@ fn transcripts_modified_since(root: &Path, cutoff: u64) -> Vec<PathBuf> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn aggregating_rolls_fine_buckets_up_without_losing_tokens() {
+        // The whole point of one fine history serving every range: a coarse view has to be
+        // the sum of the fine buckets under it, not a sample of one of them.
+        let mut history = TokenHistory::new(
+            "/nonexistent",
+            Duration::from_secs(3600),
+            Duration::from_secs(10),
+        );
+
+        for (offset, id) in [(0, "a"), (10, "b"), (20, "c"), (70, "d")] {
+            ingest(
+                &mut history,
+                &assistant(
+                    &format!("2026-08-24T20:0{}:{:02}.000Z", offset / 60, offset % 60),
+                    "claude-opus-5",
+                    id,
+                    20,
+                ),
+                BASE,
+            );
+        }
+
+        // The newest slot is the bucket currently in progress, so the window has to reach
+        // one slot further back than the oldest datum for it to appear at all.
+        let window = Duration::from_secs(180);
+        let fine = history.aggregate_at(BASE + 120_000, window, BUCKET_10S);
+        let coarse = history.aggregate_at(BASE + 120_000, window, BUCKET_60S);
+
+        let fine_total: u64 = fine.iter().map(Bucket::total).sum();
+        let coarse_total: u64 = coarse.iter().map(Bucket::total).sum();
+
+        assert_eq!(fine_total, coarse_total, "rolling up must conserve tokens");
+        assert_eq!(fine_total, 4 * PER_MESSAGE);
+
+        // Minute zero holds three messages, minute one holds one, minute two is in
+        // progress and empty.
+        assert_eq!(coarse.len(), 3);
+        assert_eq!(coarse[0].total(), 3 * PER_MESSAGE);
+        assert_eq!(coarse[1].total(), PER_MESSAGE);
+        assert_eq!(coarse[2].total(), 0);
+    }
+
+    #[test]
+    fn an_aggregate_slot_starts_on_its_own_grid() {
+        // Slots have to align to the requested step, not to the stored one, or the labels
+        // drawn from `start_ms` name a time the bucket does not actually cover.
+        let history = TokenHistory::new(
+            "/nonexistent",
+            Duration::from_secs(3600),
+            Duration::from_secs(10),
+        );
+
+        let buckets = history.aggregate_at(BASE + 137_000, Duration::from_secs(600), BUCKET_60S);
+
+        assert!(buckets.iter().all(|b| b.start_ms % 60_000 == 0));
+        assert!(
+            buckets
+                .windows(2)
+                .all(|w| w[1].start_ms - w[0].start_ms == 60_000),
+            "slots must be contiguous"
+        );
+    }
+
+    #[test]
+    fn aggregating_keeps_families_separate() {
+        let mut history = TokenHistory::new(
+            "/nonexistent",
+            Duration::from_secs(3600),
+            Duration::from_secs(10),
+        );
+
+        ingest(
+            &mut history,
+            &assistant("2026-08-24T20:00:00.000Z", "claude-opus-5", "a", 20),
+            BASE,
+        );
+        ingest(
+            &mut history,
+            &assistant("2026-08-24T20:00:30.000Z", "claude-sonnet-5", "b", 20),
+            BASE,
+        );
+
+        let rolled = history.aggregate_at(BASE + 60_000, Duration::from_secs(120), BUCKET_60S);
+
+        assert_eq!(rolled.len(), 2);
+        assert_eq!(rolled[0].total_for(ModelFamily::Opus), PER_MESSAGE);
+        assert_eq!(rolled[0].total_for(ModelFamily::Sonnet), PER_MESSAGE);
+        assert_eq!(
+            rolled[0].totals.len(),
+            2,
+            "two families, not one merged pile"
+        );
+    }
+
+    #[test]
+    fn a_replaced_file_only_forgets_its_own_dedupe_state() {
+        // Clearing the whole `seen` map on any one file's replacement is safe at a handful
+        // of tracked files and wrong at a few hundred: every other file's messages become
+        // re-countable, and the next replayed line adds them to buckets that already hold
+        // them. Only the replaced file's keys may go.
+        let mut history = history();
+
+        ingest_from(
+            &mut history,
+            &assistant("2026-08-24T20:00:00.000Z", "claude-opus-5", "a", 20),
+            BASE,
+            7,
+        );
+
+        history.seen.retain(|_, counted| counted.source != 7);
+
+        // The bucket keeps what was really spent...
+        let before = history.buckets_at(BASE + 60_000);
+        assert_eq!(before.iter().map(Bucket::total).sum::<u64>(), PER_MESSAGE);
+
+        // ...and a different file's key is untouched by that retraction.
+        ingest_from(
+            &mut history,
+            &assistant("2026-08-24T20:00:00.000Z", "claude-opus-5", "b", 20),
+            BASE,
+            9,
+        );
+        history.seen.retain(|_, counted| counted.source != 7);
+
+        assert!(
+            history.seen.values().any(|counted| counted.source == 9),
+            "another file's dedupe state must survive"
+        );
+    }
+
+    /// What one `assistant` fixture contributes: 10 input + 100 cache read + 5 cache
+    /// creation + 20 output.
+    const PER_MESSAGE: u64 = 135;
+    const BUCKET_10S: Duration = Duration::from_secs(10);
+    const BUCKET_60S: Duration = Duration::from_secs(60);
+
     /// `2026-08-24T20:00:00.000Z` in epoch millis, a round bucket boundary.
     const BASE: u64 = 1_787_601_600_000;
 
@@ -365,11 +562,17 @@ mod tests {
         )
     }
 
+    /// Ingest as if from one transcript. Tests that care about which file a message came
+    /// from call `ingest_from` instead.
     fn ingest(history: &mut TokenHistory, line: &str, cutoff: u64) {
+        ingest_from(history, line, cutoff, 0);
+    }
+
+    fn ingest_from(history: &mut TokenHistory, line: &str, cutoff: u64, source: u32) {
         let Some(record) = Record::parse(line) else {
             panic!("fixture must parse: {line}");
         };
-        history.ingest(&record, cutoff);
+        history.ingest(&record, cutoff, source);
     }
 
     #[test]

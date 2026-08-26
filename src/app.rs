@@ -89,6 +89,8 @@ pub struct AppConfigFields {
     pub disk_io_legend_position: Option<LegendPosition>,
     pub power_legend_position: Option<LegendPosition>,
     pub claude_legend_position: Option<LegendPosition>,
+    /// The range the Claude stats graph starts on.
+    pub claude_stats_range: claude_metrics::StatsRange,
     pub disk_show_unmounted: bool,
     pub disk_io_graph_show_unmounted: bool,
 }
@@ -1215,6 +1217,7 @@ impl App {
             '+' => self.on_plus(),
             '-' => self.on_minus(),
             '=' => self.reset_zoom(),
+            'l' => self.toggle_claude_log(),
             'e' => self.toggle_expand_widget(),
             's' => {
                 if let BottomWidgetType::Proc = self.current_widget.widget_type {
@@ -2045,6 +2048,10 @@ impl App {
             }
             // NOTE(redd): this match ends in `_ => None`, so forgetting an arm here does
             // not fail to compile -- it just makes the zoom keys silently do nothing.
+            //
+            // `ClaudeStats` is absent on purpose. Its axis span is not a free choice -- it
+            // has to match the span of the buckets the collector rolled up -- so the zoom
+            // keys change its *range* instead, via `on_claude_stats_range_key`.
             BottomWidgetType::Power
                 if let Some(widget_state) = self
                     .states
@@ -2062,6 +2069,55 @@ impl App {
                 Some(widget_state.graph.state_mut())
             }
             _ => None,
+        }
+    }
+
+    /// Handle a range key on the Claude stats graph, if that is what is focused.
+    ///
+    /// Returns the new range so the caller can forward it to the collection thread, which
+    /// owns the history and does the roll-up. `None` means the key was not ours and should
+    /// fall through to the normal handling -- which matters, because `+`, `-`, and `=` are
+    /// the zoom keys everywhere else.
+    pub fn on_claude_stats_range_key(&mut self, key: char) -> Option<claude_metrics::StatsRange> {
+        if self.ignore_normal_keybinds() {
+            return None;
+        }
+
+        if self.current_widget.widget_type != BottomWidgetType::ClaudeStats {
+            return None;
+        }
+
+        let state = self
+            .states
+            .claude_stats_state
+            .get_mut_widget_state(self.current_widget.widget_id)?;
+
+        Some(match key {
+            'T' => state.cycle_range(),
+            // Zoom in is a shorter span, matching every other graph's `+`.
+            '+' => state.shorten_range(),
+            '-' => state.lengthen_range(),
+            '=' => state.reset_range(),
+            _ => return None,
+        })
+    }
+
+    /// Flip the focused Claude graph between its linear and logarithmic y-axis.
+    fn toggle_claude_log(&mut self) {
+        let id = self.current_widget.widget_id;
+
+        match self.current_widget.widget_type {
+            BottomWidgetType::ClaudeStats => {
+                if let Some(state) = self.states.claude_stats_state.get_mut_widget_state(id) {
+                    state.toggle_log();
+                }
+            }
+            BottomWidgetType::ClaudeGraph => {
+                if let Some(state) = self.states.claude_graph_state.get_mut_widget_state(id) {
+                    state.use_log = !state.use_log;
+                }
+            }
+            _ => {}
         }
     }
 

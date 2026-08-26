@@ -61,6 +61,7 @@
 
 pub mod history;
 pub mod model;
+pub mod range;
 pub mod session;
 pub mod statusline;
 pub mod tailer;
@@ -73,6 +74,7 @@ use std::{
 
 pub use history::{Bucket, TokenHistory};
 pub use model::ModelFamily;
+pub use range::StatsRange;
 pub use session::Session;
 pub use statusline::Statusline;
 pub use tailer::Tailer;

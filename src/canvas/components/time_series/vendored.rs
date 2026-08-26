@@ -735,12 +735,20 @@ impl<'a, F: Copy + Default + Into<f64>> TimeChart<'a, F> {
         let first_label = labels.first().expect("must have at least 2 labels");
         let last_label = labels.last().expect("must have at least 2 labels");
 
-        let width_between_ticks = graph_area.width / labels_len;
+        // NOTE(redd): labels are spaced across the plot in proportion to the value they
+        // name, matching `render_y_labels` below. Upstream steps by
+        // `graph_area.width / labels.len()`, which puts label `i` at `i + 1` steps from the
+        // left -- correct only for the two-label case it was written against. At five
+        // labels the middle one drifts nearly a fifth of the plot left of the point it is
+        // supposed to be naming, which is exactly the sort of quietly-wrong axis that reads
+        // as real data.
+        let last_index = labels_len - 1;
+        let span = graph_area.width.saturating_sub(1);
 
         let label_area = self.first_x_label_area(
             y,
             first_label.width() as u16,
-            width_between_ticks,
+            graph_area.width / labels_len,
             chart_area,
             graph_area,
         );
@@ -753,18 +761,23 @@ impl<'a, F: Copy + Default + Into<f64>> TimeChart<'a, F> {
 
         Self::render_label(buf, first_label, label_area, label_alignment);
 
-        for (i, label) in labels[1..labels.len() - 1].iter().enumerate() {
-            // We add 1 to x (and width-1 below) to leave at least one space before each
-            // intermediate labels
-            let x = graph_area.left() + (i + 1) as u16 * width_between_ticks + 1;
-            let label_area = Rect::new(x, y, width_between_ticks.saturating_sub(1), 1);
+        for (offset, label) in labels[1..labels.len() - 1].iter().enumerate() {
+            let index = offset as u16 + 1;
+            let centre = graph_area.left() + index * span / last_index;
+            let width = (label.width() as u16).min(graph_area.width);
 
-            Self::render_label(buf, label, label_area, Alignment::Center);
+            // Centred on the tick, then pulled back inside the plot at either end so a wide
+            // label near an edge is nudged rather than clipped.
+            let left = centre
+                .saturating_sub(width / 2)
+                .clamp(graph_area.left(), graph_area.right().saturating_sub(width));
+
+            Self::render_label(buf, label, Rect::new(left, y, width, 1), Alignment::Left);
         }
 
-        let x = graph_area.right() - width_between_ticks;
-        let label_area = Rect::new(x, y, width_between_ticks, 1);
-        // The last label should be aligned Right to be at the edge of the graph area
+        // The last label sits flush with the right edge of the plot, which is "now".
+        let width = (last_label.width() as u16).min(graph_area.width);
+        let label_area = Rect::new(graph_area.right() - width, y, width, 1);
         Self::render_label(buf, last_label, label_area, Alignment::Right);
     }
 
@@ -863,10 +876,31 @@ impl<F: Copy + Default + Into<f64>> Widget for TimeChart<'_, F> {
         }
 
         if let Some(x) = layout.axis_y {
+            // Rows carrying a label get a tick, matching Claude Code's own stats screen --
+            // it is what lets a bar's height be read off the axis rather than merely
+            // compared with its neighbours. Same arithmetic as `render_y_labels`, so the
+            // ticks cannot drift away from the labels they belong to.
+            let ticks: Vec<u16> = match self.y_axis.labels.as_ref() {
+                Some(labels) if labels.len() >= 2 && graph_area.height > 0 => {
+                    let last_index = labels.len() as u16 - 1;
+                    let span = graph_area.height - 1;
+
+                    (0..=last_index)
+                        .map(|index| graph_area.bottom() - 1 - index * span / last_index)
+                        .collect()
+                }
+                _ => Vec::new(),
+            };
+
             for y in graph_area.top()..graph_area.bottom() {
+                let symbol = if ticks.contains(&y) {
+                    symbols::line::CROSS
+                } else {
+                    symbols::line::VERTICAL
+                };
+
                 if let Some(cell) = buf.cell_mut((x, y)) {
-                    cell.set_symbol(symbols::line::VERTICAL)
-                        .set_style(self.y_axis.style);
+                    cell.set_symbol(symbol).set_style(self.y_axis.style);
                 }
             }
         }

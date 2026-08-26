@@ -7,7 +7,7 @@ use ratatui::{
     style::Style,
     symbols::Marker,
     text::{Line, Span},
-    widgets::{BorderType, GraphType},
+    widgets::{BorderType, GraphType, Padding},
 };
 use timeless::data::ChunkedData;
 
@@ -128,6 +128,12 @@ pub struct TimeGraph<'a> {
     /// Any legend constraints.
     pub legend_constraints: Option<LegendConstraints>,
 
+    /// X-axis labels to draw instead of the default distance-from-now ones.
+    pub x_labels: Option<&'a [Cow<'a, str>]>,
+
+    /// Rows to keep clear at the bottom of the widget, inside the border.
+    pub footer_rows: u16,
+
     /// The marker type. Unlike ratatui's native charts, we assume
     /// only a single type of marker.
     pub marker: Marker,
@@ -143,21 +149,32 @@ impl TimeGraph<'_> {
         let adjusted_x_bounds = AxisBound::Min(self.x_min);
 
         if self.hide_x_labels {
-            Axis::default().bounds(adjusted_x_bounds)
-        } else {
-            let x_bound_left = ((-self.x_min) as u64 / 1000).to_string();
-            let x_bound_right = "0s";
-
-            let x_labels = vec![
-                Span::styled(concat_string!(x_bound_left, "s"), self.graph_style),
-                Span::styled(x_bound_right, self.graph_style),
-            ];
-
-            Axis::default()
-                .bounds(adjusted_x_bounds)
-                .labels(x_labels)
-                .style(self.graph_style)
+            return Axis::default().bounds(adjusted_x_bounds);
         }
+
+        // A caller that knows the wall-clock span its points cover labels the axis itself.
+        // The fallback below can only say how far back the left edge is, which is the right
+        // answer for a rolling window of live samples and a useless one for buckets: at a
+        // thirty-day span it renders `2592000s`.
+        let x_labels: Vec<Span<'_>> = match self.x_labels {
+            Some(labels) if labels.len() >= 2 => labels
+                .iter()
+                .map(|label| Span::styled(label.clone(), self.graph_style))
+                .collect(),
+            _ => {
+                let x_bound_left = ((-self.x_min) as u64 / 1000).to_string();
+
+                vec![
+                    Span::styled(concat_string!(x_bound_left, "s"), self.graph_style),
+                    Span::styled("0s", self.graph_style),
+                ]
+            }
+        };
+
+        Axis::default()
+            .bounds(adjusted_x_bounds)
+            .labels(x_labels)
+            .style(self.graph_style)
     }
 
     /// Generates the [`Axis`] for the y-axis.
@@ -190,6 +207,14 @@ impl TimeGraph<'_> {
             )
             .border_style(self.border_style)
             .title_top(Line::styled(self.title.as_ref(), self.title_style));
+
+            // Padding is what makes the reservation honest: `TimeChart` derives its plot
+            // area, its axis rows, and the rect the pixel path draws into from
+            // `block.inner_if_some(area)`, so every one of them moves up together and the
+            // caller's footer lands on cells nothing else wants.
+            if self.footer_rows > 0 {
+                b = b.padding(Padding::bottom(self.footer_rows));
+            }
 
             if self.is_expanded {
                 b = b.title_top(Line::styled(" Esc to go back ", self.title_style).right_aligned())
@@ -496,6 +521,8 @@ mod test {
             title_style: Style::default().fg(Color::Cyan),
             legend_position: None,
             legend_constraints: None,
+            x_labels: None,
+            footer_rows: 0,
             marker: Marker::Braille,
             scaling: ChartScaling::Linear,
         }
@@ -517,6 +544,39 @@ mod test {
     }
 
     #[test]
+    fn supplied_x_labels_replace_the_distance_from_now_ones() {
+        const LABELS: [Cow<'static, str>; 3] = [
+            Cow::Borrowed("14:00"),
+            Cow::Borrowed("14:30"),
+            Cow::Borrowed("15:00"),
+        ];
+
+        let mut tg = create_time_series();
+        tg.x_labels = Some(&LABELS);
+
+        let labels = tg.generate_x_axis().labels.unwrap_or_default();
+
+        assert_eq!(labels.len(), 3);
+        assert_eq!(labels[0].content, "14:00");
+        assert_eq!(labels[2].content, "15:00");
+    }
+
+    #[test]
+    fn a_single_supplied_label_falls_back_rather_than_drawing_nothing() {
+        // `TimeChart::render_x_labels` bails below two labels, so honouring a one-element
+        // override would silently drop the axis instead of degrading to the default.
+        const LABELS: [Cow<'static, str>; 1] = [Cow::Borrowed("14:00")];
+
+        let mut tg = create_time_series();
+        tg.x_labels = Some(&LABELS);
+
+        let labels = tg.generate_x_axis().labels.unwrap_or_default();
+
+        assert_eq!(labels.len(), 2);
+        assert_eq!(labels[0].content, "15s");
+    }
+
+    #[test]
     fn time_series_gen_y_axis() {
         let tg = create_time_series();
         let style = Style::default().fg(Color::Red);
@@ -534,5 +594,160 @@ mod test {
         assert_eq!(y_axis.bounds, actual.bounds);
         assert_eq!(y_axis.labels, actual.labels);
         assert_eq!(y_axis.style, actual.style);
+    }
+}
+
+#[cfg(test)]
+mod render_tests {
+    use std::borrow::Cow;
+
+    use ratatui::{
+        Terminal,
+        backend::TestBackend,
+        layout::Rect,
+        style::{Color, Style},
+        symbols::Marker,
+        widgets::BorderType,
+    };
+    use timeless::data::ChunkedData;
+
+    use super::{AxisBound, ChartScaling, GraphData, TimeGraph};
+
+    /// Draw a Claude-shaped graph into a fixed buffer and hand back its rows.
+    fn render(footer_rows: u16) -> Vec<String> {
+        const X_LABELS: [Cow<'static, str>; 3] = [
+            Cow::Borrowed("14:00"),
+            Cow::Borrowed("15:00"),
+            Cow::Borrowed("16:00"),
+        ];
+        const Y_LABELS: [Cow<'static, str>; 5] = [
+            Cow::Borrowed("0"),
+            Cow::Borrowed("500k"),
+            Cow::Borrowed("1.0M"),
+            Cow::Borrowed("1.5M"),
+            Cow::Borrowed("2.0M"),
+        ];
+
+        let now = std::time::Instant::now();
+        let times: Vec<std::time::Instant> = (0..8)
+            .map(|i| now - std::time::Duration::from_secs((7 - i) * 60))
+            .collect();
+
+        let mut values = ChunkedData::default();
+        for v in [
+            0.0,
+            300_000.0,
+            1_200_000.0,
+            400_000.0,
+            0.0,
+            900_000.0,
+            1_800_000.0,
+            200_000.0,
+        ] {
+            values.push(v);
+        }
+
+        let graph = TimeGraph {
+            x_min: -480_000.0,
+            hide_x_labels: false,
+            y_bounds: AxisBound::Max(2_000_000.0),
+            y_labels: &Y_LABELS,
+            graph_style: Style::default().fg(Color::Gray),
+            general_widget_style: Style::default(),
+            border_style: Style::default(),
+            border_type: BorderType::Plain,
+            title: " Claude Stats ".into(),
+            is_selected: false,
+            is_expanded: false,
+            title_style: Style::default(),
+            legend_position: None,
+            legend_constraints: None,
+            x_labels: Some(&X_LABELS),
+            footer_rows,
+            marker: Marker::Braille,
+            scaling: ChartScaling::Linear,
+        };
+
+        let data = vec![
+            GraphData::default()
+                .style(Style::default().fg(Color::Blue))
+                .time(&times)
+                .values(&values)
+                .filled(false)
+                .stepped(true),
+        ];
+
+        let mut terminal = Terminal::new(TestBackend::new(60, 16)).expect("test backend");
+        terminal
+            .draw(|f| graph.draw(f, Rect::new(0, 0, 60, 16), data, None))
+            .expect("draw");
+
+        let buffer = terminal.backend().buffer().clone();
+
+        (0..buffer.area.height)
+            .map(|y| {
+                (0..buffer.area.width)
+                    .map(|x| buffer[(x, y)].symbol().to_owned())
+                    .collect::<String>()
+                    .trim_end()
+                    .to_owned()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn reserved_footer_rows_stay_empty_for_the_caller() {
+        // The whole point of the block padding: the caller paints its legend and range
+        // selector into these rows *after* the graph draws, so the graph must not have put
+        // anything there -- not the border's inside, not an axis, not a data point.
+        let rows = render(2);
+
+        let bottom = rows.len() - 1;
+        assert!(
+            rows[bottom].starts_with('└'),
+            "the border still closes the widget: {:?}",
+            rows[bottom]
+        );
+
+        for y in [bottom - 2, bottom - 1] {
+            let inner: String = rows[y].chars().skip(1).take(58).collect();
+            assert!(
+                inner.trim().is_empty(),
+                "row {y} should be reserved, got {:?}",
+                rows[y]
+            );
+        }
+    }
+
+    #[test]
+    fn the_plot_grows_back_when_no_footer_is_reserved() {
+        let with_footer = render(2);
+        let without = render(0);
+
+        // The x-axis line is the one *inside* the border, so it opens with the border's
+        // own vertical. Matching on a run of `─` alone would find the title row.
+        let axis_row = |rows: &[String]| {
+            rows.iter()
+                .position(|row| row.starts_with('│') && row.contains('└'))
+                .expect("an x-axis line")
+        };
+
+        assert!(
+            axis_row(&without) > axis_row(&with_footer),
+            "reserving rows must move the axis up, not overlap it"
+        );
+    }
+
+    #[test]
+    fn supplied_labels_and_y_ticks_reach_the_buffer() {
+        let rows = render(2).join("\n");
+
+        assert!(rows.contains("14:00"), "first x label missing:\n{rows}");
+        assert!(rows.contains("16:00"), "last x label missing:\n{rows}");
+        assert!(rows.contains("2.0M"), "top y label missing:\n{rows}");
+        assert!(
+            rows.matches('┼').count() >= 3,
+            "y-axis ticks should mark the labelled rows:\n{rows}"
+        );
     }
 }

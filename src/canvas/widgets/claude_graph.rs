@@ -1,34 +1,45 @@
-use std::borrow::Cow;
+//! Drawing the Claude token-rate graph.
+//!
+//! The same shape as the stats graph next to it, over a fixed short window and divided by
+//! the bucket width: what is being spent right now, by model family.
+//!
+//! # Why this does not difference live session totals
+//!
+//! It used to. `ClaudeMetrics::totals_by_model` reports cumulative tokens across the
+//! sessions currently in the registry, and this graph differenced that against the previous
+//! tick keyed by model family. Two things made that wrong rather than merely coarse:
+//!
+//! - The "first sighting, do not compute a rate" guard keyed on the *family*, which is
+//!   already present from every other session. So a new or resumed session -- whose
+//!   accumulator is rebuilt from zero with its tailer at offset zero, re-reading the whole
+//!   transcript -- put its entire lifetime token count into one tick's delta. Every family
+//!   in that transcript spiked together, and since the totals are cache-inclusive that was
+//!   routinely millions of tokens per second.
+//! - The session registry is written by a running process and can be read mid-write. A
+//!   single torn read dropped a session for one tick and brought it back backfilled on the
+//!   next, which is the same spike on a loop.
+//!
+//! [`claude_metrics::TokenHistory`] attributes every record to a bucket by the record's own
+//! ISO-8601 timestamp and drops undated records rather than piling them onto "now", so a
+//! backfill lands in the past where it belongs and changes nothing about the present.
 
-use claude_metrics::ModelFamily;
-use ratatui::{
-    Frame,
-    layout::{Constraint, Rect},
-    style::Style,
-};
+use ratatui::{Frame, layout::Rect};
 
 use crate::{
     app::App,
     canvas::{
         Painter,
-        components::time_series::{AxisBound, ChartScaling, GraphData, LegendConstraints},
+        components::time_series::{AxisBound, ChartScaling, GraphData},
         drawing_utils::should_hide_x_label,
+        widgets::claude_series::{self, BucketSeries},
     },
+    collection::claude::RATE_BUCKET,
     components::time_series::GraphDrawCtx,
 };
 
-/// Model families in a fixed draw order.
-///
-/// The order is also the index into the theme's colour list. Fixed rather than sorted or
-/// rank-ordered on purpose: a family that goes quiet and drops out must not repaint the
-/// ones that remain.
-const FAMILIES: [ModelFamily; 5] = [
-    ModelFamily::Opus,
-    ModelFamily::Sonnet,
-    ModelFamily::Haiku,
-    ModelFamily::Fable,
-    ModelFamily::Other,
-];
+/// Where the log axis stops tracking the data: `2^4` is sixteen tokens a second. Without a
+/// floor, a window that only ever saw a couple of tokens magnifies that to full height.
+const LOG_FLOOR: f64 = 4.0;
 
 impl Painter {
     pub fn draw_claude_graph(
@@ -40,8 +51,8 @@ impl Painter {
             .get_mut_widget_state(widget_id)
         {
             let shared_data = app_state.data_store.get_data();
-            let token_data = &shared_data.time_series_data.claude_tokens;
-            let times = &shared_data.time_series_data.time;
+            let buckets = shared_data.claude_rate_history.clone();
+            let families = shared_data.claude_history_families.clone();
 
             let border_style = self.get_border_style(widget_id, app_state.current_widget.widget_id);
             let graph_state = widget_state.graph.state_mut();
@@ -53,60 +64,48 @@ impl Painter {
             );
 
             let use_log = widget_state.use_log;
+            let footer_rows = claude_series::footer_rows(draw_loc);
 
-            // Only families that have actually produced a series. A family nobody has used
-            // would otherwise take a legend slot to say nothing.
-            let present: Vec<ModelFamily> = FAMILIES
-                .into_iter()
-                .filter(|family| token_data.contains_key(family.label()))
-                .collect();
+            // Tokens in a bucket over the seconds that bucket covers.
+            let series =
+                BucketSeries::build(&buckets, &families, RATE_BUCKET, RATE_BUCKET.as_secs_f64());
 
-            let visible = present
-                .iter()
-                .filter_map(|family| token_data.get(family.label()));
-            let y_max = widget_state.graph.y_max(visible, times);
+            let (y_max, y_labels) = claude_series::axis(
+                series.peak,
+                use_log,
+                LOG_FLOOR,
+                claude_series::y_label_count(claude_series::plot_height(draw_loc, footer_rows)),
+                "/s",
+            );
 
-            let (adjusted_y_max, y_labels) = if use_log {
-                adjust_tokens_log(y_max)
-            } else {
-                adjust_tokens_linear(y_max)
-            };
+            // Always clock times: the window is ten minutes, so a date would repeat.
+            let x_labels = series.x_labels(
+                claude_series::x_label_count(claude_series::plot_width(draw_loc)),
+                RATE_BUCKET,
+                false,
+            );
 
             let colours = &self.styles.claude_colour_styles;
 
-            let graph_data: Vec<GraphData<'_, f64>> = present
+            let graph_data: Vec<GraphData<'_, f64>> = series
+                .bands
                 .iter()
-                .filter_map(|family| {
-                    let values = token_data.get(family.label())?;
+                .map(|band| {
+                    let style = colours
+                        .get(band.colour_index % colours.len().max(1))
+                        .copied()
+                        .unwrap_or_default();
 
-                    // Index by the family's fixed position, not by its position among the
-                    // present ones, so colours stay put as families come and go.
-                    let index = FAMILIES.iter().position(|f| f == family).unwrap_or(0);
-                    let style = if colours.is_empty() {
-                        Style::default()
-                    } else {
-                        colours[index % colours.len()]
-                    };
-
-                    let rate = values.last().copied().unwrap_or(0.0);
-
-                    Some(
-                        GraphData::default()
-                            .name(format!("{:<7}{}", family.label(), format_rate(rate)).into())
-                            .style(style)
-                            .time(times)
-                            .values(values),
-                    )
+                    GraphData::default()
+                        .style(style)
+                        .time(&series.times)
+                        .values(&band.values)
+                        .filled(false)
+                        .stepped(true)
                 })
                 .collect();
 
-            let legend_constraints = LegendConstraints {
-                width: Constraint::Ratio(3, 4),
-                height: Constraint::Ratio(1, 2),
-            };
-
             let marker = self.get_marker(app_state.app_config_fields.marker);
-            let y_labels: Vec<Cow<'_, str>> = y_labels.into_iter().map(Into::into).collect();
             let scaling = if use_log {
                 ChartScaling::Log2
             } else {
@@ -127,16 +126,31 @@ impl Painter {
                     hide_x_labels,
                     is_selected: app_state.current_widget.widget_id == widget_id,
                     is_expanded: app_state.is_expanded,
-                    legend_position: app_state.app_config_fields.claude_legend_position,
-                    legend_constraints: Some(legend_constraints),
+                    legend_position: None,
+                    legend_constraints: None,
+                    x_labels: (!hide_x_labels).then_some(x_labels.as_slice()),
+                    footer_rows,
                     pixel_renderer: self.pixel_renderer(),
-                    last_time: times.last().copied(),
+                    last_time: series.times.last().copied(),
                     style_epoch: self.style_epoch(),
                 },
-                AxisBound::Max(adjusted_y_max),
+                AxisBound::Max(y_max),
                 &y_labels,
                 scaling,
                 graph_data,
+            );
+
+            // No selector row: this graph's window is fixed, and the stats graph beside it
+            // is the one that answers longer spans.
+            claude_series::draw_footer(
+                f,
+                draw_loc,
+                &series.bands,
+                colours,
+                None,
+                self.styles.widget_title_style,
+                self.styles.graph_legend_style,
+                None,
             );
         }
 
@@ -150,154 +164,19 @@ impl Painter {
     }
 }
 
-/// Render a tokens-per-second rate compactly and at a fixed width, so the legend box does
-/// not resize between frames.
-fn format_rate(tokens_per_sec: f64) -> String {
-    let rendered = if tokens_per_sec >= 1_000_000.0 {
-        format!("{:.1}M/s", tokens_per_sec / 1_000_000.0)
-    } else if tokens_per_sec >= 1_000.0 {
-        format!("{:.1}k/s", tokens_per_sec / 1_000.0)
-    } else {
-        format!("{tokens_per_sec:.0}/s")
-    };
-
-    format!("{rendered:>9}")
-}
-
-fn adjust_tokens_linear(max_entry: f64) -> (f64, Vec<String>) {
-    // A flat-zero window would otherwise collapse the axis onto itself.
-    let ceiling = if max_entry <= 0.0 {
-        1.0
-    } else {
-        max_entry * 1.25
-    };
-
-    let labels = [0.0, 0.5, 1.0]
-        .into_iter()
-        .map(|fraction| format!("{:>9}", format_rate(ceiling * fraction).trim()))
-        .collect();
-
-    (ceiling, labels)
-}
-
-/// Token rates span several orders of magnitude in one session -- cache reads run into the
-/// millions per second while fresh input tokens are single digits -- so the log axis is the
-/// one that shows all of them at once.
-///
-/// The ceiling tracks the data rather than snapping to the next power-of-a-thousand decade.
-/// Snapping is what left the graph mostly empty: a window peaking at 1.2k tokens/s has a
-/// `log2` of 10.2, and rounding that up to the 1M/s decade at 20 drew the peak at barely
-/// half the plot height, with the top half of the widget permanently blank. Tracking the
-/// peak instead keeps it near the top of the plot whatever order of magnitude it lands on.
-fn adjust_tokens_log(max_entry: f64) -> (f64, Vec<String>) {
-    use crate::utils::general::saturating_log2;
-
-    // 2^4 is 16 tokens/s. Without a floor, a window that only ever saw a couple of tokens
-    // would magnify that noise to full height and read as a busy session.
-    const FLOOR: f64 = 4.0;
-
-    // Enough headroom that the peak does not sit flush against the border.
-    let ceiling = (saturating_log2(max_entry) * 1.1).max(FLOOR);
-
-    // Three, matching the linear axis. More would collide on a short graph, and ratatui
-    // spaces them evenly down the plot regardless of how tall it actually is.
-    let labels = (0..3)
-        .map(|step| {
-            if step == 0 {
-                // A log axis cannot reach zero, but the bottom of the plot is where "no
-                // tokens at all" lands, and labelling it 1/s would be a lie.
-                format!("{:>9}", "0/s")
-            } else {
-                let value = ceiling * f64::from(step) / 2.0;
-                format!("{:>9}", format_rate(value.exp2()).trim())
-            }
-        })
-        .collect();
-
-    (ceiling, labels)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::collection::claude::RATE_WINDOW;
 
     #[test]
-    fn rates_render_at_a_stable_width() {
-        // A legend box that resizes every frame is worse than one that wastes a column.
-        for rate in [0.0, 9.0, 999.0, 1_234.0, 5_000_000.0] {
-            assert_eq!(
-                format_rate(rate).len(),
-                9,
-                "rate {rate} rendered at the wrong width"
-            );
-        }
-    }
+    fn the_rate_window_divides_into_a_drawable_number_of_buckets() {
+        // Same constraint the selectable ranges are held to: a terminal graph has a couple
+        // of hundred columns, so a window that yielded thousands of buckets would allocate
+        // them all every tick to draw a couple of hundred.
+        let buckets = RATE_WINDOW.as_secs() / RATE_BUCKET.as_secs();
 
-    #[test]
-    fn rates_are_abbreviated_by_magnitude() {
-        assert_eq!(format_rate(999.0).trim(), "999/s");
-        assert_eq!(format_rate(1_234.0).trim(), "1.2k/s");
-        assert_eq!(format_rate(5_000_000.0).trim(), "5.0M/s");
-    }
-
-    #[test]
-    fn the_log_ceiling_tracks_the_peak_instead_of_snapping_to_a_decade() {
-        // The empty-space bug. Snapping a 1.2k/s peak up to the 1M/s decade drew it at
-        // half the plot height and left the top half of the widget permanently blank.
-        let (ceiling, _) = adjust_tokens_log(1_200.0);
-
-        let peak = crate::utils::general::saturating_log2(1_200.0);
-
-        assert!(
-            peak / ceiling > 0.85,
-            "a peak should land near the top of the plot, got {:.0}% of the height",
-            (peak / ceiling) * 100.0
-        );
-    }
-
-    #[test]
-    fn a_quiet_window_does_not_magnify_noise_to_full_height() {
-        // Without a floor, two stray tokens would draw the same shape as a busy session.
-        let (ceiling, _) = adjust_tokens_log(2.0);
-
-        assert!(
-            ceiling >= 4.0,
-            "a near-idle window must keep a fixed floor, got {ceiling}"
-        );
-    }
-
-    #[test]
-    fn log_labels_are_ascending_and_stably_sized() {
-        // The first label is the bottom of the axis, and a legend that resizes between
-        // frames is worse than one that wastes a column.
-        let (_, labels) = adjust_tokens_log(5_000_000.0);
-
-        assert_eq!(labels.len(), 3);
-        assert_eq!(labels[0].trim(), "0/s");
-        assert!(
-            labels.iter().all(|label| label.len() == 9),
-            "labels must all render at the same width: {labels:?}"
-        );
-    }
-
-    #[test]
-    fn a_flat_zero_window_still_gets_a_usable_axis() {
-        let (ceiling, labels) = adjust_tokens_linear(0.0);
-        assert!(ceiling > 0.0, "a zero ceiling would collapse the y-axis");
-        assert_eq!(labels.len(), 3);
-    }
-
-    #[test]
-    fn families_keep_a_stable_colour_index() {
-        // The whole point of indexing by family rather than by draw position: a family
-        // going quiet must not recolour the ones still on screen.
-        assert_eq!(
-            FAMILIES.iter().position(|f| *f == ModelFamily::Opus),
-            Some(0)
-        );
-        assert_eq!(
-            FAMILIES.iter().position(|f| *f == ModelFamily::Fable),
-            Some(3)
-        );
+        assert!((60..=180).contains(&buckets), "{buckets} buckets");
+        assert_eq!(RATE_WINDOW.as_secs() % RATE_BUCKET.as_secs(), 0);
     }
 }

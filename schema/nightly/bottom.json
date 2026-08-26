@@ -176,18 +176,32 @@
       }
     },
     "ClaudeConfig": {
-      "description": "Claude widget configuration.\n\nCovers both the sessions table (`claude`) and the token-rate graph (`claude_graph`).",
+      "description": "Claude widget configuration.\n\nCovers the sessions table (`claude`), the token-rate graph (`claude_graph`), and the\ntoken-history stats graph (`claude_stats`).",
       "type": "object",
       "properties": {
         "legend_position": {
-          "description": "Where to position the graph legend within the widget.",
+          "description": "Where to position the graph legend within the widget.\n\nOnly the sessions table reads this now -- both graphs draw an inline legend below\nthe plot instead of a box floating inside it.",
           "type": [
             "string",
             "null"
           ]
         },
+        "stats_range": {
+          "description": "How far back the stats graph reaches: one of `30m`, `2h`, `8h`, `24h`, `7d`, `30d`.\n\nDefaults to `2h`. Cycled at runtime with `T`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stats_use_log": {
+          "description": "Whether the token-history stats graph uses a logarithmic y-axis. Defaults to false.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
         "use_log": {
-          "description": "Whether the token-rate graph uses a logarithmic y-axis. Defaults to true.\n\nOn by default because the series genuinely span orders of magnitude: cache reads run\ninto the millions of tokens per second while fresh input tokens are single digits,\nand on a linear axis everything but the largest series sits flat on the floor.",
+          "description": "Whether the token-rate graph uses a logarithmic y-axis. Defaults to false.\n\nOff by default. The graph exists to compare families against each other over time,\nand on a log axis a band twice as tall is not twice the tokens. Turn it on for a\nwindow where one family genuinely dwarfs the rest badly enough that the others sit\nflat on the floor.",
           "type": [
             "boolean",
             "null"

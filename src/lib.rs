@@ -228,6 +228,7 @@ fn create_collection_thread(
     let show_average_cpu = app_config_fields.show_average_cpu;
     let update_sleep = app_config_fields.update_rate;
     let get_process_threads = app_config_fields.get_process_threads;
+    let claude_stats_range = app_config_fields.claude_stats_range;
     #[cfg(feature = "zfs")]
     let get_arc_free = app_config_fields.free_arc;
     let include_unmounted_disks =
@@ -244,6 +245,7 @@ fn create_collection_thread(
         #[cfg(feature = "zfs")]
         data_collector.set_free_arc_mem(get_arc_free);
         data_collector.set_include_unmounted_disks(include_unmounted_disks);
+        data_collector.set_claude_stats_range(claude_stats_range);
         #[cfg(target_os = "macos")]
         data_collector.set_power_interval(u32::try_from(update_sleep).unwrap_or(u32::MAX));
 
@@ -267,6 +269,9 @@ fn create_collection_thread(
                 match message {
                     CollectionThreadEvent::Reset => {
                         data_collector.data.cleanup();
+                    }
+                    CollectionThreadEvent::SetClaudeStatsRange(range) => {
+                        data_collector.set_claude_stats_range(range);
                     }
                 }
             }

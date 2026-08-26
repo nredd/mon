@@ -113,6 +113,11 @@ impl AutoYAxisTimeGraph {
         &mut self.state
     }
 
+    #[cfg(test)]
+    pub(crate) fn state(&self) -> &TimeseriesState {
+        &self.state
+    }
+
     pub(crate) fn y_max<'a, F, S>(&mut self, sources: S, times: &[Instant]) -> f64
     where
         F: Into<f64> + Clone + Copy + 'a,
@@ -157,6 +162,8 @@ impl AutoYAxisTimeGraph {
             title_style: ctx.title_style,
             legend_position: ctx.legend_position,
             legend_constraints: ctx.legend_constraints,
+            x_labels: ctx.x_labels,
+            footer_rows: ctx.footer_rows,
             marker: ctx.marker,
             scaling,
         }

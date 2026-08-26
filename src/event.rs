@@ -25,6 +25,11 @@ pub enum BottomEvent {
 #[derive(Debug)]
 pub enum CollectionThreadEvent {
     Reset,
+    /// Roll the Claude token history up onto a different range from now on.
+    ///
+    /// The roll-up runs on the collection thread, next to the history it reads, so a range
+    /// change has to travel there rather than being applied where the key was pressed.
+    SetClaudeStatsRange(claude_metrics::StatsRange),
 }
 
 /// Handle a [`MouseEvent`].
@@ -54,6 +59,17 @@ pub fn handle_key_event_or_break(
     event: KeyEvent, app: &mut App, reset_sender: &Sender<CollectionThreadEvent>,
 ) -> bool {
     // c_debug!("KeyEvent: {event:?}");
+
+    // Handled here rather than in `App::on_char_key` because changing the range means
+    // telling the collection thread, and the sender only exists at this level. Same reason
+    // `Ctrl-r` is handled here.
+    if let KeyCode::Char(c) = event.code
+        && matches!(c, 'T' | '+' | '-' | '=')
+        && let Some(range) = app.on_claude_stats_range_key(c)
+    {
+        let _ = reset_sender.send(CollectionThreadEvent::SetClaudeStatsRange(range));
+        return false;
+    }
 
     if event.modifiers.is_empty() {
         match event.code {

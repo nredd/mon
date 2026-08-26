@@ -57,6 +57,8 @@ impl PercentTimeGraph {
             title_style: ctx.title_style,
             legend_position: ctx.legend_position,
             legend_constraints: ctx.legend_constraints,
+            x_labels: None,
+            footer_rows: 0,
             marker: ctx.marker,
             scaling: ChartScaling::Linear,
         }

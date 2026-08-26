@@ -10,7 +10,7 @@ pub const DEFAULT_WIDGET_ID: u64 = 56709;
 pub const TABLE_GAP_HEIGHT_LIMIT: u16 = 7;
 
 // Help text
-const HELP_CONTENTS_TEXT: [&str; 12] = [
+const HELP_CONTENTS_TEXT: [&str; 13] = [
     "Scroll to browse or press the number key to go to the corresponding help menu section:",
     "1 - General",
     "2 - CPU widget",
@@ -21,6 +21,7 @@ const HELP_CONTENTS_TEXT: [&str; 12] = [
     "7 - Disk widget",
     "8 - Battery widget",
     "9 - Basic memory widget",
+    "10 - Claude widgets",
     "",
     "Press 'Ctrl-f' or '/' to search for a keyword in the help text.",
 ];
@@ -175,8 +176,18 @@ const BASIC_MEM_HELP_TEXT: [&str; 2] = [
     "%                       Toggle between values and percentages for memory usage",
 ];
 
+pub(crate) const CLAUDE_HELP_TEXT: [&str; 7] = [
+    "10 - Claude widgets",
+    "T                       Cycle the stats graph's range (30m/2h/8h/24h/7d/30d)",
+    "+                       Shorten the stats graph's range",
+    "-                       Lengthen the stats graph's range",
+    "=                       Return the stats graph to its configured range",
+    "l                       Toggle the logarithmic y-axis on either Claude graph",
+    "Note: the stats graph's axis tracks its range, so + and - move between ranges",
+];
+
 /// The number of help sections.
-const HELP_SECTIONS: usize = 10;
+const HELP_SECTIONS: usize = 11;
 
 // TODO: Add temp graph help section.
 pub(crate) const HELP_TEXT: [&[&str]; HELP_SECTIONS] = [
@@ -190,6 +201,7 @@ pub(crate) const HELP_TEXT: [&[&str]; HELP_SECTIONS] = [
     &DISK_HELP_WIDGET,
     &BATTERY_HELP_TEXT,
     &BASIC_MEM_HELP_TEXT,
+    &CLAUDE_HELP_TEXT,
 ];
 
 pub(crate) const DEFAULT_LAYOUT: &str = r#"
@@ -466,6 +478,24 @@ pub(crate) const CONFIG_TEXT: &str = r#"# This is a default config file for bott
 
 # Whether to show a decimal place for CPU usage values.
 #show_decimal = false
+
+
+# Claude widget configuration
+#[claude]
+# Logarithmic y-axis on the token-rate graph. Defaults to false -- the graph compares model
+# families by height, and on a log axis a band twice as tall is not twice the tokens.
+#use_log = false
+
+# The same, for the token-history stats graph.
+#stats_use_log = false
+
+# How far back the stats graph starts out reaching. One of "30m", "2h", "8h", "24h", "7d",
+# "30d". "T" cycles it at runtime, "+"/"-" step it, "=" comes back here.
+#stats_range = "2h"
+
+# Where to place the sessions table's legend. One of "none", "top-left", "top", "top-right",
+# "left", "right", "bottom-left", "bottom", "bottom-right".
+#legend_position = "top-right"
 
 
 # Disk widget configuration

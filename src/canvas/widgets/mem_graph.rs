@@ -199,6 +199,8 @@ impl Painter {
                         width: Constraint::Ratio(3, 4),
                         height: Constraint::Ratio(3, 4),
                     }),
+                    x_labels: None,
+                    footer_rows: 0,
                     pixel_renderer: self.pixel_renderer(),
                     last_time: app_state
                         .data_store

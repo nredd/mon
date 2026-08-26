@@ -1,5 +1,5 @@
-# Both Claude widgets in an explicit layout, so the canvas dispatch path is exercised.
-# Neither is in the default layout, and the three dispatch matches in `canvas.rs` all end in
+# All three Claude widgets in an explicit layout, so the canvas dispatch path is exercised.
+# None is in the default layout, and the three dispatch matches in `canvas.rs` all end in
 # `_ => {}`, so a missing arm compiles clean and silently renders nothing.
 
 [[row]]
@@ -11,8 +11,14 @@
   [[row.child]]
   type = "claude_graph"
 
+[[row]]
+  [[row.child]]
+  type = "claude_stats"
+
 [claude]
 use_log = true
+stats_use_log = true
+stats_range = "8h"
 legend_position = "top-right"
 
 [styles.claude]

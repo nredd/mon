@@ -199,6 +199,11 @@ pub struct DataCollector {
 
     /// Built lazily, the first time a layout actually asks for Claude data.
     claude_collector: Option<claude::ClaudeCollector>,
+    /// Which range the stats graph is showing.
+    ///
+    /// Lives here rather than being read back off the widget because the roll-up happens on
+    /// this thread; the main thread pushes changes over [`crate::event::CollectionThreadEvent`].
+    claude_stats_range: claude_metrics::StatsRange,
 
     #[cfg(unix)]
     user_table: processes::UserTable,
@@ -253,6 +258,7 @@ impl DataCollector {
             #[cfg(target_os = "macos")]
             power_interval_ms: 1000,
             claude_collector: None,
+            claude_stats_range: claude_metrics::StatsRange::default(),
             filters,
             #[cfg(unix)]
             user_table: Default::default(),
@@ -317,6 +323,10 @@ impl DataCollector {
     #[cfg(target_os = "macos")]
     pub fn set_power_interval(&mut self, interval_ms: u32) {
         self.power_interval_ms = interval_ms;
+    }
+
+    pub fn set_claude_stats_range(&mut self, range: claude_metrics::StatsRange) {
+        self.claude_stats_range = range;
     }
 
     pub fn set_include_unmounted_disks(&mut self, include_unmounted_disks: bool) {
@@ -647,7 +657,12 @@ impl DataCollector {
             .claude_collector
             .get_or_insert_with(claude::ClaudeCollector::new);
 
-        self.data.claude = collector.harvest(self.widgets_to_harvest.use_claude_stats);
+        let range = self
+            .widgets_to_harvest
+            .use_claude_stats
+            .then_some(self.claude_stats_range);
+
+        self.data.claude = collector.harvest(range);
     }
 
     /// Update battery information.

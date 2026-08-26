@@ -33,6 +33,17 @@ impl TokenTotals {
             .saturating_add(self.cache_creation)
     }
 
+    /// Fold another set of totals into this one.
+    ///
+    /// Used when rolling fine buckets up into a coarser grid, where several buckets of the
+    /// same family collapse into one.
+    pub fn merge(&mut self, other: Self) {
+        self.input = self.input.saturating_add(other.input);
+        self.output = self.output.saturating_add(other.output);
+        self.cache_read = self.cache_read.saturating_add(other.cache_read);
+        self.cache_creation = self.cache_creation.saturating_add(other.cache_creation);
+    }
+
     /// Add the per-request fields. These repeat identically across a message's records, so
     /// they are contributed exactly once, the first time the message is seen.
     fn add_request_fields(&mut self, usage: &Usage) {

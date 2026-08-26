@@ -9,8 +9,8 @@ Three widgets read [Claude Code](https://claude.com/claude-code) activity off th
 `~/.claude` tree:
 
 - `claude` -- a table of live sessions
-- `claude_graph` -- token throughput over time, by model family
-- `claude_stats` -- token spend over the last hour, as stacked bands by model family
+- `claude_graph` -- token throughput right now, by model family
+- `claude_stats` -- token spend over a selectable range, by model family
 
 None of them are in the default layout. Add them to your
 [layout](../../configuration/config-file/layout.md) to use them, or start from
@@ -21,8 +21,8 @@ which draws all three and nothing else:
 $ mon -C sample_configs/claude_config.toml --pixel_graphs kitty
 ```
 
-That config also carries the family colour list and the two `use_log` toggles inline, so it
-is a reasonable place to retune them.
+That config also carries the family colour list, the two `use_log` toggles, and the starting
+range inline, so it is a reasonable place to retune them.
 
 ## Sessions table
 
@@ -43,43 +43,80 @@ One row per running session, discovered from `~/.claude/sessions/<PID>.json` and
 Sort by clicking a header or pressing the letter in its label. Defaults to `Tokens`,
 descending.
 
-## Token graph
-
-Token throughput in tokens/second, one line per model family, differenced from the
-cumulative totals.
-
-The y-axis is **logarithmic by default**. Cache reads run into the millions of tokens per
-second while fresh input tokens are single digits, so on a linear axis every series but the
-largest sits flat on the floor. Set `use_log = false` to switch.
-
 ## Stats graph
 
-The equivalent of Claude Code's own `/status` stats screen. Claude Code bars token spend by
-day; this buckets by **minute over the last hour**, so the shape of a working session is
-visible rather than collapsed into a single bar.
+The equivalent of Claude Code's own `/status` -> Stats -> Models screen. Claude Code bars
+token spend by day; this covers a **selectable range** from half an hour to thirty days, so
+the shape of a single working session is visible as well as the shape of a month.
 
-Families are drawn as stacked bands, so the top of the stack is the total spend in that
-minute and each band is one family's share. The legend carries each family's total across
-the whole window.
+Each model family is drawn as its own **unfilled staircase from the baseline**, all overlaid
+-- so a band's height is that family's own spend, not its share of a stack. Under the plot
+sit two rows: an inline legend (`● Opus 1.2M · ● Sonnet 840.0k`) carrying each family's
+total across the window, and the range selector with the active range picked out.
 
-The y-axis is **linear by default**, unlike the token graph. A bucketed total spans a far
-narrower range than an instantaneous rate -- a busy minute and a quiet one differ by a factor
-of ten, not by five orders of magnitude -- and stacked bands only add up to the total on a
-linear axis. Set `stats_use_log = true` if one family dwarfs the rest badly enough to need
-it, accepting that the bands stop summing to the visible total.
+| Range | Bucket | Buckets |
+| ----- | ------ | ------- |
+| `30m` | 30s    | 60      |
+| `2h`  | 2m     | 60      |
+| `8h`  | 5m     | 96      |
+| `24h` | 15m    | 96      |
+| `7d`  | 1h     | 168     |
+| `30d` | 6h     | 120     |
 
-Each band is drawn as a **rounded staircase**, holding a bucket's value flat across the
-minute it covers. That is not only cosmetic: a bucket is a total over a minute, not a
-reading at an instant, so sloping between bucket centres would spread one busy minute over
-three and understate its peak. The corner rounding is cosmetic, and is what makes the chart
-read the way `/status` does rather than like a bar code.
+The pairing is not free choice. A terminal graph has a couple of hundred usable columns, so
+every range yields between sixty and a hundred and eighty buckets whatever its span -- a
+fixed one-minute bucket would give the thirty-minute view thirty points and the thirty-day
+view forty-three thousand.
 
-Both the fill and the stepping are pixel-path-only. With cell markers the graph degrades to
-straight-joined band boundaries, which is still readable -- the same trade the pixel path
-makes everywhere else.
+Set the starting range with `stats_range`; `T` cycles it at runtime.
+
+The x-axis carries **absolute local times** -- clock times up to `24h`, dates above it --
+and the y-axis fills with ticked labels rather than showing only its endpoints, so a band's
+height can be read off the axis instead of merely compared with its neighbours.
+
+The y-axis is **linear by default**. Bands are compared by height, and on a log axis a band
+twice as tall is not twice the tokens. Set `stats_use_log = true`, or press `l`, if one
+family dwarfs the rest badly enough to need it.
+
+Each band is drawn as a **rounded staircase**, holding a bucket's value flat across the span
+it covers. That is not only cosmetic: a bucket is a total over its width, not a reading at
+an instant, so sloping between bucket centres would spread one busy minute over three and
+understate its peak. The corner rounding is what makes the chart read the way `/status` does
+rather than like a bar code.
+
+The stepping is pixel-path-only. With cell markers the graph degrades to straight-joined
+lines, which is still readable -- the same trade the pixel path makes everywhere else.
 
 This is the only part of a Claude harvest that reads transcripts outside the live sessions,
 so it is skipped entirely unless the widget is in your layout.
+
+## Token graph
+
+The same graph over a fixed ten-minute window at a ten-second bucket, divided by the bucket
+width: what is being spent **right now**, in tokens per second, by family. Same outlines,
+same inline legend, no selector row -- its window is fixed, and the stats graph beside it is
+the one that answers longer spans.
+
+The y-axis is **linear by default**; `l` toggles it, or set `use_log = true`.
+
+!!! warning "This graph used to be wrong. If you are upgrading, that is why it changed."
+
+    It differenced `totals_by_model()` -- cumulative tokens across the sessions currently in
+    the registry -- against the previous tick, keyed by model family. Two things made that
+    wrong rather than merely coarse:
+
+    - The "first sighting, do not compute a rate" guard keyed on the *family*, which is
+      already present from every other session. So a new or resumed session -- whose
+      accumulator is rebuilt from zero with its tailer at offset zero, re-reading the whole
+      transcript -- put its entire lifetime token count into one tick's delta. Every family
+      in that transcript spiked together, and since the totals are cache-inclusive that was
+      routinely millions of tokens per second.
+    - The session registry is written by a running process and can be read mid-write. A
+      single torn read dropped a session for one tick and brought it back backfilled on the
+      next, which is the same spike on a loop.
+
+    It now reads the same bucketed history the stats graph does, which attributes every
+    record by the record's own timestamp, so a backfill lands in the past where it belongs.
 
 ## Where the numbers come from
 
@@ -94,6 +131,23 @@ sessions that have since exited -- which the live-session view cannot, since it 
 session's state as soon as it leaves the registry. Candidate files are filtered by
 modification time before being opened, so a tree with a year of transcripts in it still only
 opens the handful touched inside the window.
+
+### These totals are about half what `/status` shows, and this side is correct
+
+Claude Code writes **one transcript record per content block** -- thinking, text, tool use
+-- and each of them repeats the same cumulative `usage` object for the message. Its own
+rollup at `~/.claude/stats-cache.json` sums every record, so it double-counts any message
+with more than one block. Measured against a correct dedup on a real corpus, the ratio is
+almost exactly **2.00x** overall, and per model-day it runs between 1.6x and 2.2x.
+
+`claude-metrics` counts a message's request-level fields (`input_tokens`,
+`cache_read_input_tokens`, `cache_creation_input_tokens`) exactly once, keyed on
+`requestId` + `message.id`, and tracks `output_tokens` as a high-water mark because it grows
+with each block. So do not reconcile these two screens -- they are answering the same
+question and only one of them is deduping.
+
+That file is also UTC-keyed, daily-only, and only recomputed when you open the Stats screen,
+which is a second reason it is not used as a source here.
 
 **Cost, context-window occupancy, and rate limits need the statusline tee.** Claude Code
 hands those to the statusline command on stdin and writes them nowhere else on disk, so
@@ -137,10 +191,14 @@ Without it the `Cost` and `Ctx` columns read `N/A` and everything else still wor
 
 ## Key bindings
 
-`claude_graph` takes the usual graph bindings.
+| Binding   | Widget         | Action                                       |
+| --------- | -------------- | -------------------------------------------- |
+| ++t++     | `claude_stats` | Cycle the range, wrapping                    |
+| ++plus++  | `claude_stats` | Shorten the range, stopping at `30m`         |
+| ++minus++ | `claude_stats` | Lengthen the range, stopping at `30d`        |
+| ++equal++ | `claude_stats` | Back to the configured `stats_range`         |
+| ++l++     | both graphs    | Toggle the logarithmic y-axis                |
 
-| Binding   | Action                                  |
-| --------- | --------------------------------------- |
-| ++plus++  | Zoom in on chart (decrease time range)  |
-| ++minus++ | Zoom out on chart (increase time range) |
-| ++equal++ | Reset zoom                              |
+++t++ is shift-`t`. On `claude_stats` the zoom keys move between *ranges* rather than
+rescaling the axis -- its axis span has to match the span of the buckets the collector
+rolled up, so it is not a free choice.

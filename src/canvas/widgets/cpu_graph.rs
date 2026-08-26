@@ -226,6 +226,8 @@ impl Painter {
                     is_expanded: app_state.is_expanded,
                     legend_position: None,
                     legend_constraints: None,
+                    x_labels: None,
+                    footer_rows: 0,
                     pixel_renderer: self.pixel_renderer(),
                     last_time: app_state
                         .data_store

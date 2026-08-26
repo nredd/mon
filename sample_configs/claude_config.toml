@@ -1,8 +1,11 @@
 # A Claude-Code-only layout for mon.
 #
 # Everything system-related is dropped. What is left is the three Claude widgets, stacked
-# largest-first: the per-minute token history (mon's answer to Claude Code's own `/status`
+# largest-first: the bucketed token history (mon's answer to Claude Code's own `/status`
 # Models tab), the live token-rate graph underneath it, and the session table at the bottom.
+#
+# NOTE: the totals here read roughly *half* what `/status` shows, and this side is the
+# correct one -- see `docs/content/usage/widgets/claude.md`.
 #
 # Run it with:
 #
@@ -20,14 +23,11 @@
 # than accumulating live, so this only paces the rate graph and the session table.
 rate = "1s"
 
-# Keep an hour of rate samples so the token graph can zoom out to match the history
-# widget's window. `-`/`+` (or the scroll wheel) move between the two.
+# Retention only paces the system graphs, which this layout has none of. Both Claude
+# graphs pin their own axis to the span of the buckets they are drawing.
 retention = "1h"
 default_time_value = "5m"
 time_delta = "30s"
-
-# Both graphs carry a legend, so the extra time axis under each one is noise.
-hide_time = true
 
 # A rule between the session table's header and its rows.
 table_gap = "line"
@@ -36,16 +36,14 @@ table_gap = "line"
 read_only = true
 
 [claude]
-# The rate graph spans orders of magnitude -- cache reads run into millions of tokens a
-# second while fresh input tokens are single digits -- so it stays logarithmic.
-use_log = true
-
-# The history graph does not. Its bands are stacked running totals, and a stack only sums
-# to the visible total on a linear axis.
+# Both graphs stay linear. They exist to compare families against each other over time,
+# and on a log axis a band twice as tall is not twice the tokens. `l` flips either one at
+# runtime when a single family genuinely dwarfs the rest.
+use_log = false
 stats_use_log = false
 
-# Legends sit top-right on both graphs, out of the way of the rising edge.
-legend_position = "top-right"
+# Where the history graph starts. `T` cycles it; `+`/`-` step it; `=` comes back here.
+stats_range = "2h"
 
 [styles.claude]
 # Model families in fixed order: Opus, Sonnet, Haiku, Fable, Other. These are mon's
@@ -61,6 +59,7 @@ widget_title = { colour = "#d95926", bold = true }
 
 [styles.graphs]
 graph_colour = "#6a6a6a"
+# Also the inline legend and the inactive entries in the range selector row.
 legend_text = { colour = "#b4b4b4" }
 
 [styles.tables]

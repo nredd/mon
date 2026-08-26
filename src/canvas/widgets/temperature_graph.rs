@@ -89,6 +89,8 @@ impl Painter {
                     is_expanded: app_state.is_expanded,
                     legend_position: app_state.app_config_fields.temperature_legend_position,
                     legend_constraints: Some(legend_constraints),
+                    x_labels: None,
+                    footer_rows: 0,
                     pixel_renderer: self.pixel_renderer(),
                     last_time: times.last().copied(),
                     style_epoch: self.style_epoch(),

@@ -145,11 +145,6 @@ macro_rules! config_or {
 /// The default config file sub-path.
 const DEFAULT_CONFIG_FILE_LOCATION: &str = "bottom/bottom.toml";
 
-/// The window the Claude stats graph plots, matching what the collector asks
-/// `claude-metrics` for. Asking the graph for more would draw dead space before the oldest
-/// bucket the history actually holds.
-const CLAUDE_STATS_WINDOW_MS: u64 = 60 * 60 * 1000;
-
 /// Returns the config path to use. If `override_config_path` is specified, then
 /// we will use that. If not, then return the "default" config path, which is:
 ///
@@ -443,6 +438,7 @@ pub(crate) fn init_app(args: BottomArgs, config: Config) -> Result<(App, BottomL
     let disk_io_legend_position = get_disk_io_legend_position(config)?;
     let power_legend_position = get_power_legend_position(config)?;
     let claude_legend_position = get_claude_legend_position(config)?;
+    let claude_stats_range = get_claude_stats_range(config)?;
     let disk_io_name_filter = match &config.disk_io_graph {
         Some(cfg) => get_ignore_list(&cfg.name_filter)
             .context("Update 'disk_io_graph.name_filter' in your config file")?,
@@ -552,6 +548,7 @@ pub(crate) fn init_app(args: BottomArgs, config: Config) -> Result<(App, BottomL
         disk_io_legend_position,
         power_legend_position,
         claude_legend_position,
+        claude_stats_range,
         disk_show_unmounted,
         disk_io_graph_show_unmounted,
     };
@@ -780,14 +777,14 @@ pub(crate) fn init_app(args: BottomArgs, config: Config) -> Result<(App, BottomL
                             );
                         }
                         ClaudeGraph => {
-                            // Log by default: cache reads run millions of tokens per second
-                            // while fresh input tokens are single digits, so a linear axis
-                            // flattens everything but the largest series onto the floor.
+                            // Linear by default. The graph exists to compare families
+                            // against each other over time, and on a log axis a band twice
+                            // as tall is not twice the tokens. `l` toggles it.
                             let use_log = config
                                 .claude
                                 .as_ref()
                                 .and_then(|c| c.use_log)
-                                .unwrap_or(true);
+                                .unwrap_or(false);
 
                             claude_graph_state_map.insert(
                                 widget.widget_id,
@@ -795,28 +792,24 @@ pub(crate) fn init_app(args: BottomArgs, config: Config) -> Result<(App, BottomL
                             );
                         }
                         ClaudeStats => {
-                            // Linear by default, unlike the rate graph. A bucketed total
-                            // spans a far narrower range than an instantaneous rate, and
-                            // stacked bands only sum to the total on a linear axis.
                             let use_log = config
                                 .claude
                                 .as_ref()
                                 .and_then(|c| c.stats_use_log)
                                 .unwrap_or(false);
 
-                            // The window is the history's own, not the app-wide default:
-                            // the buckets `claude-metrics` hands over cover exactly an
-                            // hour, and a graph asking for more would draw dead space
-                            // before the oldest bucket.
-                            let stats_config = TimeseriesConfig {
-                                default_time_value: CLAUDE_STATS_WINDOW_MS,
-                                retention_ms: CLAUDE_STATS_WINDOW_MS,
-                                ..ts_config
-                            };
-
+                            // `ClaudeStatsWidgetState::new` pins the real window from the
+                            // range. The app-wide default passed here is only a starting
+                            // point it immediately overwrites: this graph's axis has to
+                            // match the span its buckets cover, not a user preference.
                             claude_stats_state_map.insert(
                                 widget.widget_id,
-                                ClaudeStatsWidgetState::new(stats_config, autohide_timer, use_log),
+                                ClaudeStatsWidgetState::new(
+                                    ts_config,
+                                    autohide_timer,
+                                    use_log,
+                                    claude_stats_range,
+                                ),
                             );
                         }
                         Battery => {
@@ -1585,6 +1578,27 @@ fn get_pixel_mode(args: &BottomArgs, config: &Config) -> OptionResult<PixelMode>
     }
 
     Ok(PixelMode::default())
+}
+
+/// How far back the Claude stats graph starts out reaching.
+///
+/// An unrecognised value is an error rather than a silent fallback: a typo here would
+/// otherwise leave the graph quietly showing a different span than the config asks for,
+/// which is indistinguishable from the feature not working.
+fn get_claude_stats_range(config: &Config) -> OptionResult<claude_metrics::StatsRange> {
+    let Some(raw) = config
+        .claude
+        .as_ref()
+        .and_then(|settings| settings.stats_range.as_ref())
+    else {
+        return Ok(claude_metrics::StatsRange::default());
+    };
+
+    raw.parse().map_err(|err| {
+        OptionError::config(format!(
+            "Unable to parse `claude.stats_range` value '{raw}'. {err}."
+        ))
+    })
 }
 
 fn get_claude_legend_position(config: &Config) -> OptionResult<Option<LegendPosition>> {
