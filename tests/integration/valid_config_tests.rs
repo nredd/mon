@@ -51,23 +51,48 @@ fn run_and_kill_cfg(path: &str) {
 /// never gets dispatched to.
 fn run_and_capture(args: &[&str]) -> String {
     let (master, mut handle) = spawn_mon_in_pty(args);
-    let mut reader = master.try_clone_reader().unwrap();
-    let _ = master.take_writer().unwrap();
+    let reader = master.try_clone_reader().unwrap();
+
+    // Held, not dropped. `mon` emits a device-status query (`ESC [ 6 n`) during startup and
+    // waits for the terminal to answer; closing the write side means nothing ever can, and
+    // the app sits there having drawn only its init sequence. That is what a bound `_`
+    // binding was doing here -- `let _ = ...` drops at the end of the statement.
+    let _writer = master.take_writer().unwrap();
+
+    // Drained on a thread. A single `read` returns whatever one chunk happens to hold,
+    // which at startup is the terminal setup and nothing else; the frame arrives later.
+    let collected = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let sink = std::sync::Arc::clone(&collected);
+
+    thread::spawn(move || {
+        let mut reader = reader;
+        let mut chunk = vec![0u8; 64 * 1024];
+
+        while let Ok(read) = reader.read(&mut chunk) {
+            if read == 0 {
+                break;
+            }
+
+            match sink.lock() {
+                Ok(mut sink) => sink.extend_from_slice(&chunk[..read]),
+                Err(_) => break,
+            }
+        }
+    });
 
     // Long enough for a first collection tick and a draw.
-    thread::sleep(Duration::from_millis(1500));
+    thread::sleep(Duration::from_millis(2500));
 
     if let Ok(Some(exit)) = handle.try_wait() {
         panic!("program terminated unexpectedly (exit status: {exit:?})");
     }
 
-    // Read what has been drawn so far. The child is still running and the pty will not
-    // report EOF, so take a bounded chunk rather than reading to the end.
-    let mut buf = vec![0u8; 64 * 1024];
-    let read = reader.read(&mut buf).unwrap_or(0);
-    buf.truncate(read);
-
     handle.kill().unwrap();
+
+    let buf = match collected.lock() {
+        Ok(buf) => buf.clone(),
+        Err(poisoned) => poisoned.into_inner().clone(),
+    };
 
     String::from_utf8_lossy(&buf).into_owned()
 }
@@ -339,6 +364,30 @@ fn test_claude_widgets_render() {
     assert!(
         rendered.contains("Claude Tokens"),
         "the token-rate graph did not draw its title. Rendered output was:\n{rendered}"
+    );
+    assert!(
+        rendered.contains("Claude Stats"),
+        "the stats graph did not draw its title. Rendered output was:\n{rendered}"
+    );
+
+    // The footer is painted by the widget into rows the chart reserved through its block
+    // padding. If that reservation ever stops working the graph draws over these instead,
+    // and nothing else in the test suite would notice.
+    assert!(
+        rendered.contains("30m"),
+        "the range selector row is missing. Rendered output was:\n{rendered}"
+    );
+    assert!(
+        rendered.contains('\u{25cf}'),
+        "the inline legend drew no swatches. Rendered output was:\n{rendered}"
+    );
+
+    // Absolute clock times on the x-axis, rather than the `{secs}s` fallback every other
+    // graph uses. A machine that has never run Claude Code still gets an axis.
+    let clock = regex::Regex::new(r"[0-2][0-9]:[0-5][0-9]").unwrap();
+    assert!(
+        clock.is_match(&rendered),
+        "no clock-time x-axis label. Rendered output was:\n{rendered}"
     );
 }
 

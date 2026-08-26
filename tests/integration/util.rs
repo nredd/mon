@@ -1,6 +1,6 @@
 use std::{env, ffi::OsString, path::Path, process::Command};
 
-#[cfg(all(target_arch = "x86_64", target_os = "linux"))]
+#[cfg(unix)]
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
 use rustc_hash::FxHashMap as HashMap;
 
@@ -107,7 +107,7 @@ pub fn no_cfg_mon_command() -> Command {
 }
 
 /// Spawns `mon` in a pty, returning the pair alongside a handle to the child.
-#[cfg(all(target_arch = "x86_64", target_os = "linux"))]
+#[cfg(unix)]
 pub fn spawn_mon_in_pty(args: &[&str]) -> (Box<dyn MasterPty>, Box<dyn Child>) {
     let native_pty = native_pty_system();
 

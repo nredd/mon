@@ -615,11 +615,6 @@ mod render_tests {
 
     /// Draw a Claude-shaped graph into a fixed buffer and hand back its rows.
     fn render(footer_rows: u16) -> Vec<String> {
-        const X_LABELS: [Cow<'static, str>; 3] = [
-            Cow::Borrowed("14:00"),
-            Cow::Borrowed("15:00"),
-            Cow::Borrowed("16:00"),
-        ];
         const Y_LABELS: [Cow<'static, str>; 5] = [
             Cow::Borrowed("0"),
             Cow::Borrowed("500k"),
@@ -628,6 +623,15 @@ mod render_tests {
             Cow::Borrowed("2.0M"),
         ];
 
+        render_with(footer_rows, &Y_LABELS)
+    }
+
+    fn render_with(footer_rows: u16, y_labels: &[Cow<'_, str>]) -> Vec<String> {
+        const X_LABELS: [Cow<'static, str>; 3] = [
+            Cow::Borrowed("14:00"),
+            Cow::Borrowed("15:00"),
+            Cow::Borrowed("16:00"),
+        ];
         let now = std::time::Instant::now();
         let times: Vec<std::time::Instant> = (0..8)
             .map(|i| now - std::time::Duration::from_secs((7 - i) * 60))
@@ -651,7 +655,7 @@ mod render_tests {
             x_min: -480_000.0,
             hide_x_labels: false,
             y_bounds: AxisBound::Max(2_000_000.0),
-            y_labels: &Y_LABELS,
+            y_labels,
             graph_style: Style::default().fg(Color::Gray),
             general_widget_style: Style::default(),
             border_style: Style::default(),
@@ -736,6 +740,24 @@ mod render_tests {
             axis_row(&without) > axis_row(&with_footer),
             "reserving rows must move the axis up, not overlap it"
         );
+    }
+
+    #[test]
+    fn a_wide_y_label_is_not_clipped_by_a_narrower_one() {
+        // The gutter is sized from the *widest* label, so a run like `12.1M ... 9.1M` has
+        // to fit the five-character one. Sizing from any other label silently eats a digit
+        // and turns 12.1M into 2.1M, which reads as real data.
+        const WIDE: [Cow<'static, str>; 3] = [
+            Cow::Borrowed("0"),
+            Cow::Borrowed("9.1M"),
+            Cow::Borrowed("12.1M"),
+        ];
+
+        let rows = render_with(2, &WIDE);
+        let joined = rows.join("\n");
+
+        assert!(joined.contains("12.1M"), "top label was clipped:\n{joined}");
+        assert!(joined.contains("9.1M"), "middle label missing:\n{joined}");
     }
 
     #[test]
