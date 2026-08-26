@@ -194,19 +194,43 @@ impl Record {
     /// undercounting by one message; at 64 bits and this population that is not a risk
     /// worth carrying strings to avoid.
     ///
+    /// FNV-1a rather than [`std::collections::hash_map::DefaultHasher`], and written out
+    /// rather than pulled from a crate. These hashes go to disk and are compared against
+    /// hashes computed by a later run, so the algorithm has to be fixed: `DefaultHasher`
+    /// is explicitly not stable across Rust releases, and a toolchain bump would quietly
+    /// invalidate every checkpointed dedupe key without tripping the checkpoint version.
+    ///
     /// The unhashed key stays for [`UsageAccumulator`], which holds only one live session's
     /// messages and never persists them.
     #[must_use]
     pub fn dedupe_hash(&self) -> Option<u64> {
-        use std::hash::{Hash as _, Hasher as _};
-
         let message = self.message.as_ref()?;
         let id = message.id.as_deref()?;
 
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        self.request_id.as_deref().unwrap_or("").hash(&mut hasher);
-        id.hash(&mut hasher);
-        Some(hasher.finish())
+        let mut hash = FNV_OFFSET;
+        fnv1a(
+            &mut hash,
+            self.request_id.as_deref().unwrap_or("").as_bytes(),
+        );
+        // The separator keeps `("ab", "c")` from colliding with `("a", "bc")`.
+        fnv1a(&mut hash, &[0]);
+        fnv1a(&mut hash, id.as_bytes());
+
+        Some(hash)
+    }
+}
+
+/// FNV-1a's 64-bit offset basis.
+const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+
+/// FNV-1a's 64-bit prime.
+const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
+
+/// Fold `bytes` into `hash`, FNV-1a style.
+fn fnv1a(hash: &mut u64, bytes: &[u8]) {
+    for byte in bytes {
+        *hash ^= u64::from(*byte);
+        *hash = hash.wrapping_mul(FNV_PRIME);
     }
 }
 
@@ -545,6 +569,32 @@ mod tests {
         }
 
         assert_eq!(acc.grand_total().output, 20);
+    }
+
+    #[test]
+    fn the_dedupe_hash_is_fixed_and_separated() {
+        // These go to disk and are compared against hashes a later run computes, so the
+        // algorithm has to be pinned rather than inherited from whatever `DefaultHasher`
+        // happens to be this release. The literal is the point of the test: if it changes,
+        // every checkpointed dedupe key silently stops matching.
+        let record = Record::parse(
+            r#"{"type":"assistant","requestId":"req-1","message":{"id":"msg-1","model":"claude-opus-5","usage":{"output_tokens":1}}}"#,
+        )
+        .expect("fixture must parse");
+
+        assert_eq!(record.dedupe_hash(), Some(14_808_712_396_129_523_326));
+
+        // The separator is what keeps ("ab", "c") from colliding with ("a", "bc").
+        let left = Record::parse(
+            r#"{"type":"assistant","requestId":"ab","message":{"id":"c","usage":{}}}"#,
+        )
+        .expect("fixture must parse");
+        let right = Record::parse(
+            r#"{"type":"assistant","requestId":"a","message":{"id":"bc","usage":{}}}"#,
+        )
+        .expect("fixture must parse");
+
+        assert_ne!(left.dedupe_hash(), right.dedupe_hash());
     }
 
     #[test]

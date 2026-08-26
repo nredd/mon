@@ -659,7 +659,7 @@ impl DataCollector {
 
         let range = self
             .widgets_to_harvest
-            .use_claude_stats
+            .use_claude_history
             .then_some(self.claude_stats_range);
 
         self.data.claude = collector.harvest(range);

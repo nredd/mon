@@ -377,9 +377,12 @@ fn test_claude_widgets_render() {
         rendered.contains("30m"),
         "the range selector row is missing. Rendered output was:\n{rendered}"
     );
+    // Either the legend or the scan note, because they share the row: on a machine with a
+    // real transcript tree the first couple of seconds go on the cold read, and saying so
+    // is what that row is for.
     assert!(
-        rendered.contains('\u{25cf}'),
-        "the inline legend drew no swatches. Rendered output was:\n{rendered}"
+        rendered.contains('\u{25cf}') || rendered.contains("scanning transcripts"),
+        "the legend row drew neither swatches nor a scan note. Rendered output was:\n{rendered}"
     );
 
     // Absolute clock times on the x-axis, rather than the `{secs}s` fallback every other

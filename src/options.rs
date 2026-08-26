@@ -865,7 +865,9 @@ pub(crate) fn init_app(args: BottomArgs, config: Config) -> Result<(App, BottomL
         use_claude: used_widget_set.contains(&Claude)
             || used_widget_set.contains(&ClaudeGraph)
             || used_widget_set.contains(&ClaudeStats),
-        use_claude_stats: used_widget_set.contains(&ClaudeStats),
+        use_claude_history: used_widget_set
+            .iter()
+            .any(BottomWidgetType::needs_claude_history),
     };
 
     let (disk_name_filter, disk_mount_filter) = {

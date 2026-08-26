@@ -46,11 +46,6 @@ impl ClaudeStatsWidgetState {
         state
     }
 
-    /// The range currently being asked for.
-    pub fn range(&self) -> StatsRange {
-        self.range
-    }
-
     /// Ask for a different range, and pin the graph's x-axis to match.
     ///
     /// The two have to move together. The axis span comes from the graph's own display
@@ -127,7 +122,6 @@ mod tests {
 
         state.set_range(StatsRange::SevenDays);
 
-        assert_eq!(state.range(), StatsRange::SevenDays);
         assert_eq!(
             state.graph.state().current_display_time(),
             7 * 24 * 60 * 60 * 1000

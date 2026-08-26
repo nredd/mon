@@ -135,9 +135,14 @@ pub struct TokenHistory {
 /// tree is done. On a real tree the first read is hundreds of megabytes.
 pub const REFRESH_CHUNK_BYTES: u64 = 32 * 1024 * 1024;
 
-/// The checkpoint format version. Bumped whenever the shape below changes; a file written
-/// by any other version is discarded and rebuilt rather than guessed at.
-const CHECKPOINT_VERSION: u32 = 1;
+/// The checkpoint format version.
+///
+/// Bumped whenever the shape below changes *or* the meaning of anything in it does -- a
+/// file written by any other version is discarded and rebuilt rather than guessed at.
+/// Version 2 changed the dedupe hash from `DefaultHasher` to FNV-1a; the shape was
+/// identical, so nothing but this constant would have caught a version 1 file being adopted
+/// with keys that no longer match anything the current code computes.
+const CHECKPOINT_VERSION: u32 = 2;
 
 impl TokenHistory {
     /// A history over `window`, split into buckets of `bucket`.
@@ -681,6 +686,18 @@ impl TokenHistory {
             );
         }
 
+        // `by_path` is the only index `forget_missing` can retract through, so a file that
+        // is not reachable from it can never be dropped and its buckets would be counted
+        // for the life of the process. A checkpoint holding one path twice -- corrupt, or
+        // hand-edited -- would otherwise double every one of that file's tokens silently,
+        // which is a good deal worse than the cold read a rejected checkpoint costs.
+        let reachable: std::collections::HashSet<SourceId> =
+            self.by_path.values().copied().collect();
+
+        self.files.retain(|id, _| reachable.contains(id));
+        self.seen
+            .retain(|_, counted| reachable.contains(&counted.source));
+
         for (key, family, output, bucket, index) in checkpoint.seen {
             let (Some(family), Some(source)) =
                 (family_at(family), ids.get(index as usize).copied())
@@ -725,6 +742,10 @@ struct CheckpointFile {
     buckets: Vec<(u64, u8, u64, u64, u64, u64)>,
 }
 
+/// A family's position in [`ModelFamily::ALL`], which is how it is stored.
+///
+/// The position rather than the name: it is one byte against several, and there are tens of
+/// thousands of these in a checkpoint.
 fn family_index(family: ModelFamily) -> u8 {
     u8::try_from(
         ModelFamily::ALL
@@ -735,6 +756,8 @@ fn family_index(family: ModelFamily) -> u8 {
     .unwrap_or(0)
 }
 
+/// The inverse of [`family_index`]. `None` for an index this build does not know, which is
+/// what a checkpoint written by a version with more families would carry.
 fn family_at(index: u8) -> Option<ModelFamily> {
     ModelFamily::ALL.get(index as usize).copied()
 }
@@ -746,17 +769,31 @@ fn family_at(index: u8) -> Option<ModelFamily> {
 /// object -- on a real tree this rejects most of the bytes for the cost of a substring
 /// search, and the JSON parser only ever sees lines that might matter.
 fn carries_usage(line: &[u8]) -> bool {
-    memfind(line, b"\"usage\"")
+    contains(line, b"\"usage\"")
 }
 
-fn memfind(haystack: &[u8], needle: &[u8]) -> bool {
+/// Whether `haystack` contains `needle`.
+///
+/// Anchored on the first byte before comparing the rest, rather than a bare
+/// `windows().any()` that runs a full slice comparison at every offset. Measured over a
+/// 628MB cold read: 617-651ms against 655-682ms, so about 6%. Modest, because the pass is
+/// dominated by JSON parsing rather than by this -- worth keeping since it costs four extra
+/// lines, not worth a dependency, and definitely not worth reaching for `memchr` on the
+/// strength of an unmeasured hunch.
+fn contains(haystack: &[u8], needle: &[u8]) -> bool {
+    let Some((first, rest)) = needle.split_first() else {
+        return true;
+    };
+
     if needle.len() > haystack.len() {
         return false;
     }
 
-    haystack
-        .windows(needle.len())
-        .any(|window| window == needle)
+    haystack[..=haystack.len() - needle.len()]
+        .iter()
+        .enumerate()
+        .filter(|(_, byte)| *byte == first)
+        .any(|(index, _)| haystack[index + 1..index + needle.len()] == *rest)
 }
 
 /// Unix epoch milliseconds, now.
@@ -766,6 +803,7 @@ fn now_ms() -> u64 {
         .map_or(0, millis)
 }
 
+/// A duration in whole milliseconds, saturating rather than wrapping.
 fn millis(duration: Duration) -> u64 {
     u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
 }
@@ -1476,6 +1514,75 @@ mod tests {
         assert_eq!(total, PER_MESSAGE);
 
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_checkpoint_naming_one_file_twice_cannot_double_count_it() {
+        // `by_path` is the only index a retraction can reach a file through, so a second
+        // entry for the same path orphans the first: it stays in `files`, keeps
+        // contributing to every aggregate, and can never be dropped. Silent double-counting
+        // for the life of the process is far worse than the cold read a rejected checkpoint
+        // costs, so the loader reconciles the two maps.
+        let root = tree("dupe-path");
+        let project = root.join("projects").join("-Users-someone-code-thing");
+        let checkpoint = root.join("history.json");
+
+        write_lines(
+            &project.join("session-1.jsonl"),
+            &[assistant(
+                "2026-08-24T20:00:00.000Z",
+                "claude-opus-5",
+                "a",
+                20,
+            )],
+        );
+
+        let mut original = tree_history(&root);
+        original.refresh_at(BASE + 60_000);
+        original.save(&checkpoint).unwrap();
+
+        // Duplicate the single file entry, as a corrupt or hand-edited checkpoint might.
+        let raw = std::fs::read_to_string(&checkpoint).unwrap();
+        let mut decoded: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        let files = decoded["files"].as_array().unwrap().clone();
+        decoded["files"] = serde_json::Value::Array(vec![files[0].clone(), files[0].clone()]);
+        std::fs::write(&checkpoint, decoded.to_string()).unwrap();
+
+        let mut restored = tree_history(&root);
+        restored.load(&checkpoint);
+
+        let total: u64 = restored
+            .buckets_at(BASE + 60_000)
+            .iter()
+            .map(Bucket::total)
+            .sum();
+
+        assert_eq!(total, PER_MESSAGE, "counted once, not twice");
+
+        // And the survivor is still reachable, so it can still be retracted.
+        std::fs::remove_file(project.join("session-1.jsonl")).unwrap();
+        restored.refresh_at(BASE + 60_000);
+        assert_eq!(stored(&restored), 0);
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn the_prefilter_finds_a_needle_wherever_it_sits() {
+        // It rejects on the first byte before comparing the rest, which is the kind of
+        // optimisation that quietly breaks at the ends of the haystack.
+        assert!(contains(b"\"usage\":{}", b"\"usage\""));
+        assert!(contains(b"{\"a\":1,\"usage\":{}}", b"\"usage\""));
+        assert!(contains(b"trailing \"usage\"", b"\"usage\""));
+
+        assert!(!contains(b"\"usag\"", b"\"usage\""));
+        assert!(!contains(b"\"usage", b"\"usage\""));
+        assert!(!contains(b"", b"\"usage\""));
+
+        // A near miss on the anchor byte, so the rest of the comparison has to run.
+        assert!(!contains(b"\"u\"\"us\"\"usa\"", b"\"usage\""));
+
+        assert!(contains(b"anything", b""), "an empty needle is everywhere");
     }
 
     #[test]

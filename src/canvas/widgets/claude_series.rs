@@ -21,9 +21,172 @@ use ratatui::{
     Frame,
     layout::Rect,
     style::Style,
+    symbols::Marker,
     text::{Line, Span},
 };
 use timeless::data::ChunkedData;
+
+use crate::{
+    canvas::{
+        Painter,
+        components::time_series::{AxisBound, ChartScaling, GraphData},
+    },
+    components::time_series::{AutoYAxisTimeGraph, GraphDrawCtx},
+};
+
+/// Everything the two Claude graphs draw differently.
+///
+/// They are the same picture at two scales -- per-family token volume as overlaid stepped
+/// outlines, with an inline legend underneath -- so the drawing lives in one place and this
+/// carries the handful of values that actually differ. Keeping two copies of the body meant
+/// a change to the shape had to be made twice, and the second copy was where it did not get
+/// made.
+pub(crate) struct BandSpec<'a> {
+    /// The widget's border title.
+    pub(crate) title: &'static str,
+    /// The window, oldest bucket first.
+    pub(crate) buckets: &'a [Bucket],
+    /// Families that contributed anything, in a stable draw order.
+    pub(crate) families: &'a [ModelFamily],
+    /// The width of one bucket, which sets the plot geometry and the axis labels.
+    pub(crate) bucket: Duration,
+    /// Divides a bucket total into the plotted value: one for counts, the bucket's width in
+    /// seconds for a rate.
+    pub(crate) divisor: f64,
+    /// Suffix on every y-axis label -- empty for counts, `/s` for a rate.
+    pub(crate) unit: &'static str,
+    /// The `log2` value below which the log axis stops tracking the data.
+    pub(crate) log_floor: f64,
+    /// Whether the x-axis wants dates rather than clock times.
+    pub(crate) spans_days: bool,
+    /// Drawn in the selector row. `None` for a graph whose window is fixed.
+    pub(crate) range: Option<StatsRange>,
+    /// Whether the y-axis is logarithmic.
+    pub(crate) use_log: bool,
+    /// Shown instead of the legend while the transcript scan is catching up.
+    pub(crate) scan_note: Option<String>,
+}
+
+/// Per-frame state that comes off the app rather than off the data.
+///
+/// Separate from [`BandSpec`] because it is read from `App` while the widget's own graph
+/// state is borrowed mutably, so the caller has to gather it before calling.
+pub(crate) struct BandFrame {
+    pub(crate) hide_x_labels: bool,
+    pub(crate) is_selected: bool,
+    pub(crate) is_expanded: bool,
+    pub(crate) marker: Marker,
+}
+
+impl Painter {
+    /// Draw one of the Claude token graphs, footer and all.
+    pub(crate) fn draw_claude_bands(
+        &self, f: &mut Frame<'_>, draw_loc: Rect, graph: &mut AutoYAxisTimeGraph,
+        frame: &BandFrame, spec: &BandSpec<'_>,
+    ) {
+        let footer_rows = footer_rows(draw_loc);
+        let series = BucketSeries::build(spec.buckets, spec.families, spec.bucket, spec.divisor);
+
+        let (y_max, y_labels) = axis(
+            series.peak,
+            spec.use_log,
+            spec.log_floor,
+            y_label_count(plot_height(draw_loc, footer_rows)),
+            spec.unit,
+        );
+
+        let x_labels = series.x_labels(
+            x_label_count(plot_width(draw_loc)),
+            spec.bucket,
+            spec.spans_days,
+        );
+
+        let colours = &self.styles.claude_colour_styles;
+
+        let graph_data: Vec<GraphData<'_, f64>> = series
+            .bands
+            .iter()
+            .map(|band| {
+                GraphData::default()
+                    .style(colour(colours, band.colour_index))
+                    .time(&series.times)
+                    .values(&band.values)
+                    // Overlaid outlines, not stacked fills. Each family is drawn from the
+                    // baseline in its own colour, which is what the native screen does and
+                    // what makes one family's own volume readable rather than only its
+                    // share of a total.
+                    .filled(false)
+                    // A bucket is a total over its width, not a reading at an instant.
+                    // Sloping between bucket centres would spread one busy minute over
+                    // three and understate its peak; a staircase holds each bucket flat
+                    // across the span it covers.
+                    .stepped(true)
+            })
+            .collect();
+
+        let scaling = if spec.use_log {
+            ChartScaling::Log2
+        } else {
+            ChartScaling::Linear
+        };
+
+        graph.draw(
+            f,
+            draw_loc,
+            GraphDrawCtx {
+                title: spec.title.into(),
+                // `get_border_style` takes the two ids and compares them; the caller has
+                // already resolved that into `is_selected`.
+                border_style: if frame.is_selected {
+                    self.styles.highlighted_border_style
+                } else {
+                    self.styles.border_style
+                },
+                title_style: self.styles.widget_title_style,
+                graph_style: self.styles.graph_style,
+                general_widget_style: self.styles.general_widget_style,
+                border_type: self.styles.border_type,
+                marker: frame.marker,
+                hide_x_labels: frame.hide_x_labels,
+                is_selected: frame.is_selected,
+                is_expanded: frame.is_expanded,
+                // The legend lives in the footer below the plot, not in a box floating
+                // inside it.
+                legend_position: None,
+                legend_constraints: None,
+                x_labels: (!frame.hide_x_labels).then_some(x_labels.as_slice()),
+                footer_rows,
+                pixel_renderer: self.pixel_renderer(),
+                last_time: series.times.last().copied(),
+                style_epoch: self.style_epoch(),
+            },
+            AxisBound::Max(y_max),
+            &y_labels,
+            scaling,
+            graph_data,
+        );
+
+        draw_footer(
+            f,
+            draw_loc,
+            &series.bands,
+            colours,
+            spec.range,
+            self.styles.widget_title_style,
+            self.styles.graph_legend_style,
+            spec.scan_note.as_deref(),
+        );
+    }
+}
+
+/// One family's colour, or the default when the theme supplies no list.
+pub(crate) fn colour(colours: &[Style], index: usize) -> Style {
+    if colours.is_empty() {
+        Style::default()
+    } else {
+        colours[index % colours.len()]
+    }
+}
 
 /// One model family's outline.
 pub(crate) struct Band {
@@ -77,7 +240,7 @@ impl BucketSeries {
         let times: Vec<Instant> = (0..buckets.len())
             .map(|index| {
                 let back = buckets.len() - 1 - index;
-                now.checked_sub(bucket.saturating_mul(back as u32))
+                now.checked_sub(bucket.saturating_mul(u32::try_from(back).unwrap_or(u32::MAX)))
                     .unwrap_or(now)
             })
             .collect();
@@ -378,13 +541,7 @@ fn legend_spans<'a>(
             spans.push(Span::styled(SEPARATOR, muted_style));
         }
 
-        let colour = if colours.is_empty() {
-            Style::default()
-        } else {
-            colours[band.colour_index % colours.len()]
-        };
-
-        spans.push(Span::styled(SWATCH, colour));
+        spans.push(Span::styled(SWATCH, colour(colours, band.colour_index)));
 
         let text = if totals {
             format!(
@@ -423,10 +580,12 @@ fn selector_line<'a>(range: StatsRange, active_style: Style, muted_style: Style)
     Line::from(spans)
 }
 
+/// The rendered width of a run of spans, for deciding whether the legend fits.
 fn line_width(spans: &[Span<'_>]) -> usize {
     spans.iter().map(ratatui::text::Span::width).sum()
 }
 
+/// A duration in whole milliseconds, saturating rather than wrapping.
 fn millis(duration: Duration) -> u64 {
     u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
 }

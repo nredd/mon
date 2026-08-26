@@ -63,7 +63,14 @@ pub fn handle_key_event_or_break(
     // Handled here rather than in `App::on_char_key` because changing the range means
     // telling the collection thread, and the sender only exists at this level. Same reason
     // `Ctrl-r` is handled here.
-    if let KeyCode::Char(c) = event.code
+    //
+    // Gated on the modifiers the plain and shift branches below accept, so that `Ctrl--`
+    // and friends keep falling through to their own handling rather than being swallowed
+    // here. `T` is shift-`t`, so shift has to be allowed.
+    let unmodified = event.modifiers.is_empty() || event.modifiers == KeyModifiers::SHIFT;
+
+    if unmodified
+        && let KeyCode::Char(c) = event.code
         && matches!(c, 'T' | '+' | '-' | '=')
         && let Some(range) = app.on_claude_stats_range_key(c)
     {

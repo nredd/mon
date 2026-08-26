@@ -964,6 +964,16 @@ impl BottomWidgetType {
         )
     }
 
+    /// Whether this widget draws the rolling token history.
+    ///
+    /// Both Claude graphs do: the stats graph rolls it up onto the selected range, and the
+    /// rate graph divides a short fine window by the bucket width. It lives here rather
+    /// than being spelled out at the one call site because getting it wrong is invisible --
+    /// the widget still draws its border and its title, just never any data.
+    pub fn needs_claude_history(&self) -> bool {
+        matches!(self, Self::ClaudeGraph | Self::ClaudeStats)
+    }
+
     pub fn get_pretty_name(&self) -> &str {
         use BottomWidgetType::*;
         match self {
@@ -1104,8 +1114,14 @@ pub struct UsedWidgets {
     pub use_power: bool,
     pub use_claude: bool,
     /// Whether any widget needs the rolling token history, which is the only part of a
-    /// Claude harvest that reads transcripts outside the live sessions.
-    pub use_claude_stats: bool,
+    /// Claude harvest that reads transcripts outside the live sessions -- and the only part
+    /// that starts a thread.
+    ///
+    /// Both graphs read it: the stats graph rolls it up onto the selected range, and the
+    /// rate graph divides a short fine window by the bucket width. Naming this after the
+    /// stats widget alone is what made the rate graph draw nothing in a layout that had it
+    /// without its neighbour.
+    pub use_claude_history: bool,
 }
 
 #[cfg(test)]
@@ -1165,6 +1181,21 @@ mod added_widget_tests {
         assert_eq!(table.get_pretty_name(), "Claude");
         assert_eq!(graph.get_pretty_name(), "Claude Tokens");
         assert_eq!(stats.get_pretty_name(), "Claude Stats");
+    }
+
+    #[test]
+    fn both_claude_graphs_ask_for_the_token_history() {
+        // The rate graph reads the same bucketed history the stats graph does, so a layout
+        // holding it *without* its neighbour still has to start the scan. Tying that to the
+        // stats widget alone left the rate graph drawing its border, its axis, and no data
+        // at all -- which looks exactly like a quiet account.
+        assert!(BottomWidgetType::ClaudeGraph.needs_claude_history());
+        assert!(BottomWidgetType::ClaudeStats.needs_claude_history());
+
+        // The sessions table reads live session state only, and the scan is the one part of
+        // a harvest that walks the whole tree. It must not pay for it.
+        assert!(!BottomWidgetType::Claude.needs_claude_history());
+        assert!(!BottomWidgetType::Cpu.needs_claude_history());
     }
 
     #[test]

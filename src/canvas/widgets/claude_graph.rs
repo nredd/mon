@@ -1,7 +1,8 @@
 //! Drawing the Claude token-rate graph.
 //!
-//! The same shape as the stats graph next to it, over a fixed short window and divided by
-//! the bucket width: what is being spent right now, by model family.
+//! The same picture as the stats graph next to it, over a fixed short window and divided by
+//! the bucket width: what is being spent right now, by model family. Everything they draw
+//! the same way lives in [`crate::canvas::widgets::claude_series`].
 //!
 //! # Why this does not difference live session totals
 //!
@@ -29,12 +30,10 @@ use crate::{
     app::App,
     canvas::{
         Painter,
-        components::time_series::{AxisBound, ChartScaling, GraphData},
         drawing_utils::should_hide_x_label,
-        widgets::claude_series::{self, BucketSeries},
+        widgets::claude_series::{self, BandFrame, BandSpec},
     },
     collection::claude::RATE_BUCKET,
-    components::time_series::GraphDrawCtx,
 };
 
 /// Where the log axis stops tracking the data: `2^4` is sixteen tokens a second. Without a
@@ -51,110 +50,43 @@ impl Painter {
             .get_mut_widget_state(widget_id)
         {
             let shared_data = app_state.data_store.get_data();
-            let buckets = shared_data.claude_rate_history.clone();
-            let families = shared_data.claude_history_families.clone();
 
-            let border_style = self.get_border_style(widget_id, app_state.current_widget.widget_id);
-            let graph_state = widget_state.graph.state_mut();
+            let use_log = widget_state.use_log;
             let hide_x_labels = should_hide_x_label(
                 app_state.app_config_fields.hide_time,
                 app_state.app_config_fields.autohide_time,
-                graph_state.autohide_timer_mut(),
+                widget_state.graph.state_mut().autohide_timer_mut(),
                 draw_loc,
             );
 
-            let use_log = widget_state.use_log;
-            let footer_rows = claude_series::footer_rows(draw_loc);
-            let scan_note = shared_data
-                .claude_history_progress
-                .map(claude_series::scan_note);
-
-            // Tokens in a bucket over the seconds that bucket covers.
-            let series =
-                BucketSeries::build(&buckets, &families, RATE_BUCKET, RATE_BUCKET.as_secs_f64());
-
-            let (y_max, y_labels) = claude_series::axis(
-                series.peak,
-                use_log,
-                LOG_FLOOR,
-                claude_series::y_label_count(claude_series::plot_height(draw_loc, footer_rows)),
-                "/s",
-            );
-
-            // Always clock times: the window is ten minutes, so a date would repeat.
-            let x_labels = series.x_labels(
-                claude_series::x_label_count(claude_series::plot_width(draw_loc)),
-                RATE_BUCKET,
-                false,
-            );
-
-            let colours = &self.styles.claude_colour_styles;
-
-            let graph_data: Vec<GraphData<'_, f64>> = series
-                .bands
-                .iter()
-                .map(|band| {
-                    let style = colours
-                        .get(band.colour_index % colours.len().max(1))
-                        .copied()
-                        .unwrap_or_default();
-
-                    GraphData::default()
-                        .style(style)
-                        .time(&series.times)
-                        .values(&band.values)
-                        .filled(false)
-                        .stepped(true)
-                })
-                .collect();
-
-            let marker = self.get_marker(app_state.app_config_fields.marker);
-            let scaling = if use_log {
-                ChartScaling::Log2
-            } else {
-                ChartScaling::Linear
+            let frame = BandFrame {
+                hide_x_labels,
+                is_selected: app_state.current_widget.widget_id == widget_id,
+                is_expanded: app_state.is_expanded,
+                marker: self.get_marker(app_state.app_config_fields.marker),
             };
 
-            widget_state.graph.draw(
-                f,
-                draw_loc,
-                GraphDrawCtx {
-                    title: " Claude Tokens ".into(),
-                    border_style,
-                    title_style: self.styles.widget_title_style,
-                    graph_style: self.styles.graph_style,
-                    general_widget_style: self.styles.general_widget_style,
-                    border_type: self.styles.border_type,
-                    marker,
-                    hide_x_labels,
-                    is_selected: app_state.current_widget.widget_id == widget_id,
-                    is_expanded: app_state.is_expanded,
-                    legend_position: None,
-                    legend_constraints: None,
-                    x_labels: (!hide_x_labels).then_some(x_labels.as_slice()),
-                    footer_rows,
-                    pixel_renderer: self.pixel_renderer(),
-                    last_time: series.times.last().copied(),
-                    style_epoch: self.style_epoch(),
-                },
-                AxisBound::Max(y_max),
-                &y_labels,
-                scaling,
-                graph_data,
-            );
+            let spec = BandSpec {
+                title: " Claude Tokens ",
+                buckets: &shared_data.claude_rate_history,
+                families: &shared_data.claude_history_families,
+                bucket: RATE_BUCKET,
+                // Tokens in a bucket over the seconds that bucket covers.
+                divisor: RATE_BUCKET.as_secs_f64(),
+                unit: "/s",
+                log_floor: LOG_FLOOR,
+                // Always clock times: the window is ten minutes, so a date would repeat.
+                spans_days: false,
+                // No selector row -- this graph's window is fixed, and the stats graph
+                // beside it is the one that answers longer spans.
+                range: None,
+                use_log,
+                scan_note: shared_data
+                    .claude_history_progress
+                    .map(claude_series::scan_note),
+            };
 
-            // No selector row: this graph's window is fixed, and the stats graph beside it
-            // is the one that answers longer spans.
-            claude_series::draw_footer(
-                f,
-                draw_loc,
-                &series.bands,
-                colours,
-                None,
-                self.styles.widget_title_style,
-                self.styles.graph_legend_style,
-                scan_note.as_deref(),
-            );
+            self.draw_claude_bands(f, draw_loc, &mut widget_state.graph, &frame, &spec);
         }
 
         if app_state.should_get_widget_bounds()

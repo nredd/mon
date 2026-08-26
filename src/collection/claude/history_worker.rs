@@ -143,6 +143,7 @@ struct Scanner {
 }
 
 impl Scanner {
+    /// Read, publish, and checkpoint until the request channel closes.
     fn run(&mut self, requests: &Receiver<StatsRange>) {
         if let Some(path) = self.checkpoint.clone() {
             self.history.load(&path);
@@ -174,6 +175,7 @@ impl Scanner {
         self.save();
     }
 
+    /// Roll the history up onto the current range and hand it to the collection thread.
     fn publish(&self) {
         let snapshot = HistorySnapshot {
             history: self
@@ -191,6 +193,7 @@ impl Scanner {
         }
     }
 
+    /// Checkpoint, but no more often than [`CHECKPOINT_INTERVAL`].
     fn save_if_due(&mut self) {
         let due = self
             .last_saved
@@ -201,13 +204,15 @@ impl Scanner {
         }
     }
 
+    /// Write the checkpoint, ignoring a failure.
+    ///
+    /// A checkpoint that cannot be written is not worth surfacing: the history in memory is
+    /// still correct, and the next start just pays for a cold read.
     fn save(&mut self) {
         let Some(path) = self.checkpoint.as_ref() else {
             return;
         };
 
-        // A checkpoint that cannot be written is not a failure worth surfacing: the history
-        // in memory is still correct, and the next start just pays for a cold read.
         if self.history.save(path).is_ok() {
             self.last_saved = Some(Instant::now());
         }
