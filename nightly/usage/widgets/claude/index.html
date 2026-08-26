@@ -2298,9 +2298,14 @@ narrower range than an instantaneous rate -- a busy minute and a quiet one diffe
 of ten, not by five orders of magnitude -- and stacked bands only add up to the total on a
 linear axis. Set <code>stats_use_log = true</code> if one family dwarfs the rest badly enough to need
 it, accepting that the bands stop summing to the visible total.</p>
-<p>The bands are filled only on the <a href="../../../#kitty-pixel-rendering">pixel path</a>. With cell
-markers the graph degrades to the band boundaries as plain lines, which is still readable --
-the same trade the pixel path makes everywhere else.</p>
+<p>Each band is drawn as a <strong>rounded staircase</strong>, holding a bucket's value flat across the
+minute it covers. That is not only cosmetic: a bucket is a total over a minute, not a
+reading at an instant, so sloping between bucket centres would spread one busy minute over
+three and understate its peak. The corner rounding is cosmetic, and is what makes the chart
+read the way <code>/status</code> does rather than like a bar code.</p>
+<p>Both the fill and the stepping are pixel-path-only. With cell markers the graph degrades to
+straight-joined band boundaries, which is still readable -- the same trade the pixel path
+makes everywhere else.</p>
 <p>This is the only part of a Claude harvest that reads transcripts outside the live sessions,
 so it is skipped entirely unless the widget is in your layout.</p>
 <h2 id="where-the-numbers-come-from"><a class="toclink" href="#where-the-numbers-come-from">Where the numbers come from</a></h2>
@@ -2395,7 +2400,7 @@ _mon_cache_payload<span class="w"> </span><span class="o">||</span><span class="
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="August 25, 2026 21:08:21">August 25, 2026</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="August 26, 2026 04:00:16">August 26, 2026</span>
   </span>
 
     
