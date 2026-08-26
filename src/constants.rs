@@ -178,7 +178,7 @@ const BASIC_MEM_HELP_TEXT: [&str; 2] = [
 
 pub(crate) const CLAUDE_HELP_TEXT: [&str; 7] = [
     "10 - Claude widgets",
-    "T                       Cycle the stats graph's range (30m/2h/8h/24h/7d/30d)",
+    "T                       Cycle the stats graph's range (5m/30m/2h/8h/24h/7d/30d)",
     "+                       Shorten the stats graph's range",
     "-                       Lengthen the stats graph's range",
     "=                       Return the stats graph to its configured range",
@@ -487,8 +487,8 @@ pub(crate) const CONFIG_TEXT: &str = r#"# This is a default config file for bott
 # the tokens.
 #stats_use_log = false
 
-# How far back the stats graph starts out reaching. One of "30m", "2h", "8h", "24h", "7d",
-# "30d". "T" cycles it at runtime, "+"/"-" step it, "=" comes back here.
+# How far back the stats graph starts out reaching. One of "5m", "30m", "2h", "8h", "24h",
+# "7d", "30d". "T" cycles it at runtime, "+"/"-" step it, "=" comes back here.
 #stats_range = "2h"
 
 # Where to place the sessions table's legend. One of "none", "top-left", "top", "top-right",

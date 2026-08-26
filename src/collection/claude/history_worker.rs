@@ -24,7 +24,7 @@ use std::{
     path::PathBuf,
     sync::{
         Arc, Mutex,
-        mpsc::{Receiver, RecvTimeoutError, Sender, channel},
+        mpsc::{Receiver, RecvTimeoutError, Sender, TryRecvError, channel},
     },
     thread,
     time::{Duration, Instant},
@@ -151,22 +151,43 @@ impl Scanner {
                 self.save_if_due();
             }
 
-            // Zero while there is more to read, so the cold pass keeps going at full speed
-            // and still notices a range change or a shutdown between slices.
-            let wait = if caught_up {
-                IDLE_INTERVAL
+            // Two different waits, and the distinction is load-bearing. Caught up, this
+            // blocks for `IDLE_INTERVAL`. Mid-read it must not block at all, but it still
+            // has to *notice* a range change queued between slices -- and
+            // `recv_timeout(Duration::ZERO)` does not reliably see one, which is how a key
+            // pressed during the first scan of a large tree got silently dropped. Draining
+            // with `try_recv` says exactly what is meant instead of leaning on the timing
+            // edge of a zero-length timeout.
+            let disconnected = if caught_up {
+                match requests.recv_timeout(IDLE_INTERVAL) {
+                    Ok(range) => {
+                        self.range = range;
+                        false
+                    }
+                    Err(RecvTimeoutError::Timeout) => false,
+                    Err(RecvTimeoutError::Disconnected) => true,
+                }
             } else {
-                Duration::ZERO
+                self.drain(requests)
             };
 
-            match requests.recv_timeout(wait) {
-                Ok(range) => self.range = range,
-                Err(RecvTimeoutError::Timeout) => {}
-                Err(RecvTimeoutError::Disconnected) => break,
+            if disconnected {
+                break;
             }
         }
 
         self.save();
+    }
+
+    /// Take every queued request without blocking. Returns whether the channel has closed.
+    fn drain(&mut self, requests: &Receiver<StatsRange>) -> bool {
+        loop {
+            match requests.try_recv() {
+                Ok(range) => self.range = range,
+                Err(TryRecvError::Empty) => return false,
+                Err(TryRecvError::Disconnected) => return true,
+            }
+        }
     }
 
     /// Roll the history up onto the current range and hand it to the collection thread.

@@ -187,7 +187,7 @@
           ]
         },
         "stats_range": {
-          "description": "How far back the stats graph reaches: one of `30m`, `2h`, `8h`, `24h`, `7d`, `30d`.\n\nDefaults to `2h`. Cycled at runtime with `T`.",
+          "description": "How far back the stats graph reaches: one of `5m`, `30m`, `2h`, `8h`, `24h`, `7d`,\n`30d`.\n\nDefaults to `2h`. Cycled at runtime with `T`.",
           "type": [
             "string",
             "null"

@@ -114,10 +114,19 @@ fn history_window() -> Duration {
 
 /// How finely that window is divided internally.
 ///
-/// Deliberately finer than anything drawn. Every range rolls this grid up on demand via
-/// `TokenHistory::aggregate`, so the transcripts are parsed once no matter how many views
-/// want them, and switching range costs an aggregation rather than a re-scan.
-const HISTORY_BUCKET: Duration = Duration::from_secs(10);
+/// Every range rolls this grid up on demand via `TokenHistory::aggregate`, so the
+/// transcripts are parsed once no matter how many views want them, and switching range
+/// costs an aggregation rather than a re-scan. Rolling up cannot invent detail, so this has
+/// to be at least as fine as the finest range -- `the_internal_grid_can_serve_every_range`
+/// holds the two together.
+///
+/// It is not finer than it needs to be either. Measured over thirty days of a real tree,
+/// halving it from ten seconds to five took the stored buckets from 19.6k to 30.6k -- but
+/// only the checkpoint from 3.0MB to 3.3MB and its load from 11ms to 13ms, because the
+/// per-file records and the dedupe keys dominate both. The cold read did not move at all;
+/// it is bound by JSON parsing. Cheap enough for a five-minute view that draws sixty points
+/// instead of thirty, and there is nothing finer to buy.
+const HISTORY_BUCKET: Duration = Duration::from_secs(5);
 
 /// Where the scan's checkpoint lives.
 ///
@@ -233,5 +242,43 @@ impl ClaudeCollector {
             history_families: snapshot.families,
             history_progress: snapshot.progress,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_internal_grid_can_serve_every_range() {
+        // Aggregation rolls the stored grid *up*. A range asking for a bucket finer than
+        // the grid does not get finer data -- it gets the same data spread over slots that
+        // alternate empty, which draws as a comb rather than a staircase.
+        for range in StatsRange::ALL {
+            assert!(
+                range.bucket() >= HISTORY_BUCKET,
+                "{range} wants {:?} buckets from a {HISTORY_BUCKET:?} grid",
+                range.bucket()
+            );
+
+            assert_eq!(
+                range.bucket().as_secs() % HISTORY_BUCKET.as_secs(),
+                0,
+                "{range}'s bucket must be a whole number of grid steps, or its slots \
+                 straddle stored buckets unevenly"
+            );
+        }
+    }
+
+    #[test]
+    fn the_retained_window_covers_every_range() {
+        // A range reaching further back than the history retains would draw dead space
+        // before the oldest bucket and read as an idle stretch that never happened.
+        for range in StatsRange::ALL {
+            assert!(
+                range.window() <= history_window(),
+                "{range} reaches too far back"
+            );
+        }
     }
 }

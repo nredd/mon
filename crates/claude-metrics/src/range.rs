@@ -13,6 +13,11 @@ use std::{fmt, str::FromStr, time::Duration};
 /// How far back the token-history graph reaches, and how finely it is divided.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum StatsRange {
+    /// Five minutes, in five-second buckets.
+    ///
+    /// The finest view there is, and the one that pins the history's internal grid: nothing
+    /// can be rolled up finer than it is stored.
+    FiveMinutes,
     /// Half an hour, in thirty-second buckets.
     ThirtyMinutes,
     /// Two hours, in two-minute buckets.
@@ -31,7 +36,8 @@ pub enum StatsRange {
 impl StatsRange {
     /// Every range, shortest first. This is also the cycle order and the order the
     /// selector row is drawn in.
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
+        Self::FiveMinutes,
         Self::ThirtyMinutes,
         Self::TwoHours,
         Self::EightHours,
@@ -44,6 +50,7 @@ impl StatsRange {
     #[must_use]
     pub const fn window(self) -> Duration {
         match self {
+            Self::FiveMinutes => Duration::from_mins(5),
             Self::ThirtyMinutes => Duration::from_mins(30),
             Self::TwoHours => Duration::from_hours(2),
             Self::EightHours => Duration::from_hours(8),
@@ -57,6 +64,7 @@ impl StatsRange {
     #[must_use]
     pub const fn bucket(self) -> Duration {
         match self {
+            Self::FiveMinutes => Duration::from_secs(5),
             Self::ThirtyMinutes => Duration::from_secs(30),
             Self::TwoHours => Duration::from_mins(2),
             Self::EightHours => Duration::from_mins(5),
@@ -70,6 +78,7 @@ impl StatsRange {
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
+            Self::FiveMinutes => "5m",
             Self::ThirtyMinutes => "30m",
             Self::TwoHours => "2h",
             Self::EightHours => "8h",
@@ -226,6 +235,20 @@ mod tests {
 
         assert_eq!(shortest.longer(), StatsRange::ALL[1]);
         assert_eq!(StatsRange::ALL[1].shorter(), shortest);
+    }
+
+    #[test]
+    fn the_finest_range_is_no_finer_than_the_stored_grid() {
+        // `TokenHistory` rolls its own grid up onto whatever a range asks for, and rolling
+        // up cannot invent detail: a range finer than the grid just yields alternating
+        // empty slots. This is the constraint that decides `HISTORY_BUCKET`.
+        let finest = StatsRange::ALL
+            .into_iter()
+            .map(StatsRange::bucket)
+            .min()
+            .unwrap_or_default();
+
+        assert_eq!(finest, Duration::from_secs(5));
     }
 
     #[test]

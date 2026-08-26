@@ -140,11 +140,15 @@ mod tests {
 
     #[test]
     fn zoom_clamps_at_both_ends() {
-        let mut state = state(StatsRange::ThirtyMinutes);
+        // Derived from `ALL` rather than naming the ends, so adding a range cannot turn
+        // this into a failure about the test's own assumptions.
+        let shortest = StatsRange::ALL[0];
+        let longest = StatsRange::ALL[StatsRange::ALL.len() - 1];
 
-        assert_eq!(state.shorten_range(), StatsRange::ThirtyMinutes);
+        let mut state = state(shortest);
+        assert_eq!(state.shorten_range(), shortest);
 
-        state.set_range(StatsRange::ThirtyDays);
-        assert_eq!(state.lengthen_range(), StatsRange::ThirtyDays);
+        state.set_range(longest);
+        assert_eq!(state.lengthen_range(), longest);
     }
 }

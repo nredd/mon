@@ -53,8 +53,8 @@ descending.
 ## Stats graph
 
 The equivalent of Claude Code's own `/status` -> Stats -> Models screen. Claude Code bars
-token spend by day; this covers a **selectable range** from half an hour to thirty days, so
-the shape of a single working session is visible as well as the shape of a month.
+token spend by day; this covers a **selectable range** from five minutes to thirty days, so
+the shape of a single turn is visible as well as the shape of a month.
 
 Each model family is drawn as its own **unfilled staircase from the baseline**, all overlaid
 -- so a band's height is that family's own spend, not its share of a stack. Under the plot
@@ -63,6 +63,7 @@ total across the window, and the range selector with the active range picked out
 
 | Range | Bucket | Buckets |
 | ----- | ------ | ------- |
+| `5m`  | 5s     | 60      |
 | `30m` | 30s    | 60      |
 | `2h`  | 2m     | 60      |
 | `8h`  | 5m     | 96      |
@@ -72,8 +73,15 @@ total across the window, and the range selector with the active range picked out
 
 The pairing is not free choice. A terminal graph has a couple of hundred usable columns, so
 every range yields between sixty and a hundred and eighty buckets whatever its span -- a
-fixed one-minute bucket would give the thirty-minute view thirty points and the thirty-day
-view forty-three thousand.
+fixed one-minute bucket would give the five-minute view five points and the thirty-day view
+forty-three thousand.
+
+The history is stored on a five-second grid and every range is rolled up from it on demand,
+so the transcripts are parsed once no matter which range is showing and switching costs an
+aggregation rather than a re-scan. That grid is why `5m` is the finest range there is:
+rolling up cannot invent detail, and a range finer than the grid would draw a comb of
+alternating empty buckets rather than a staircase. Going finer is also the expensive
+direction -- five seconds already holds 30.6k buckets over thirty days of a real tree.
 
 Set the starting range with `stats_range`; `T` cycles it at runtime.
 
@@ -214,8 +222,8 @@ widget is the one focused at launch.
 
 | Binding   | Action                                             |
 | --------- | -------------------------------------------------- |
-| ++t++     | Cycle the range, wrapping `30m` -> ... -> `30d` -> `30m` |
-| ++plus++  | Shorten the range, stopping at `30m`               |
+| ++t++     | Cycle the range, wrapping `5m` -> ... -> `30d` -> `5m` |
+| ++plus++  | Shorten the range, stopping at `5m`                |
 | ++minus++ | Lengthen the range, stopping at `30d`              |
 | ++equal++ | Back to the configured `stats_range`               |
 | ++l++     | Toggle the logarithmic y-axis                      |

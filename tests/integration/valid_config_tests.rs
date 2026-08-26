@@ -429,6 +429,12 @@ fn test_claude_widgets_render() {
 /// the modifier gate, `CollectionThreadEvent::SetClaudeStatsRange`, the scan thread rolling
 /// the history up onto the new span, and the footer drawing the new highlight. Every piece
 /// of it is unit-tested in isolation and none of that would notice the wiring being wrong.
+///
+/// On a machine with real transcripts the keypress lands *during* the first cold read,
+/// which is the case that was broken: the scan thread took requests with
+/// `recv_timeout(Duration::ZERO)` while reading, which does not reliably see a queued
+/// message, so a key pressed in the first few seconds was dropped. Do not "stabilise" this
+/// by waiting for the scan to finish first -- that is precisely the coverage.
 #[test]
 fn a_range_key_moves_the_stats_graph_to_another_span() {
     // The sample layout starts on `2h` and focuses the graph, so `+` shortens it to `30m`.

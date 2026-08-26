@@ -16,8 +16,14 @@ use std::{
 
 use claude_metrics::{Bucket, ModelFamily, REFRESH_CHUNK_BYTES, TokenHistory};
 
+/// The widest selectable range, which is what `mon` retains.
 const WINDOW: Duration = Duration::from_hours(30 * 24);
-const BUCKET: Duration = Duration::from_secs(10);
+
+/// `mon`'s internal grid. Kept in step with `collection::claude::HISTORY_BUCKET` by hand --
+/// this crate cannot see that constant, and measuring a grid the app does not use would
+/// report costs nobody pays.
+const BUCKET: Duration = Duration::from_secs(5);
+
 const DAY: Duration = Duration::from_hours(24);
 
 fn main() {

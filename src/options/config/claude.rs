@@ -20,7 +20,8 @@ pub(crate) struct ClaudeConfig {
     /// silently give a stale config the opposite of what it asked for.
     pub(crate) stats_use_log: Option<bool>,
 
-    /// How far back the stats graph reaches: one of `30m`, `2h`, `8h`, `24h`, `7d`, `30d`.
+    /// How far back the stats graph reaches: one of `5m`, `30m`, `2h`, `8h`, `24h`, `7d`,
+    /// `30d`.
     ///
     /// Defaults to `2h`. Cycled at runtime with `T`.
     pub(crate) stats_range: Option<String>,

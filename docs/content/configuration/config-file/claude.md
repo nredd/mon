@@ -13,7 +13,7 @@ Set under `[claude]`. These cover the `claude` table and the `claude_stats` hist
 | Config option     | Type                                                   | Default | Behaviour                                        |
 | ----------------- | ------------------------------------------------------ | ------- | ------------------------------------------------ |
 | `stats_use_log`   | Boolean                                                | `false` | Logarithmic y-axis on the stats graph.           |
-| `stats_range`     | String (one of ["30m", "2h", "8h", "24h", "7d", "30d"]) | `2h`   | How far back the stats graph starts out reaching. |
+| `stats_range`     | String (one of ["5m", "30m", "2h", "8h", "24h", "7d", "30d"]) | `2h` | How far back the stats graph starts out reaching. |
 | `legend_position` | String (one of ["none", "top-left", "top", "top-right", "left", "right", "bottom-left", "bottom", "bottom-right"]) | `top-right` | Where to place the graph legend. |
 
 `stats_use_log` defaults off. The graph exists to compare model families against each other

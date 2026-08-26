@@ -510,7 +510,7 @@ pub(crate) fn draw_footer(
     if let Some(range) = range {
         let selector_area = Rect::new(draw_loc.x + 1, legend_y + 1, inner_width, 1);
         f.render_widget(
-            selector_line(range, active_style, muted_style),
+            selector_line(range, active_style, muted_style, inner_width),
             selector_area,
         );
     }
@@ -560,7 +560,16 @@ fn legend_spans<'a>(
 }
 
 /// `30m · 2h · 8h · 24h · 7d · 30d`, with the active one picked out.
-fn selector_line<'a>(range: StatsRange, active_style: Style, muted_style: Style) -> Line<'a> {
+/// `5m · 30m · 2h · 8h · 24h · 7d · 30d`, or just the active range if that will not fit.
+///
+/// The fallback matters more than it looks. A `Line` too wide for its area is truncated
+/// from the right, so on a narrow widget the full row would silently drop the last few
+/// ranges -- and if the active one were among them, the row would show a list with nothing
+/// highlighted, which reads as "the range keys are broken" rather than "the widget is
+/// narrow". Showing the active range alone is always honest; `T` still cycles.
+fn selector_line<'a>(
+    range: StatsRange, active_style: Style, muted_style: Style, width: u16,
+) -> Line<'a> {
     let mut spans = Vec::with_capacity(StatsRange::ALL.len() * 2);
 
     for candidate in StatsRange::ALL {
@@ -575,6 +584,10 @@ fn selector_line<'a>(range: StatsRange, active_style: Style, muted_style: Style)
         };
 
         spans.push(Span::styled(candidate.label(), style));
+    }
+
+    if line_width(&spans) > usize::from(width) {
+        spans = vec![Span::styled(range.label(), active_style)];
     }
 
     Line::from(spans)
@@ -917,12 +930,21 @@ mod tests {
         let rows = render_footer(60, 16, None);
 
         assert_eq!(rows[13], " ● Opus 1.2M · ● Sonnet 840.0k");
-        assert_eq!(rows[14], " 30m · 2h · 8h · 24h · 7d · 30d");
+        assert_eq!(rows[14], " 5m · 30m · 2h · 8h · 24h · 7d · 30d");
         assert!(rows[15].is_empty(), "the bottom row is the border's");
         assert!(
             rows[..13].iter().all(|row| row.is_empty()),
             "nothing above the reserved rows may be touched"
         );
+    }
+
+    #[test]
+    fn a_narrow_selector_shows_the_active_range_rather_than_a_truncated_list() {
+        // Truncation drops from the right, so a narrow widget would show a list with the
+        // highlight missing -- which reads as broken range keys, not as a narrow widget.
+        let rows = render_footer(24, 16, None);
+
+        assert_eq!(rows[14], " 2h");
     }
 
     #[test]
@@ -940,7 +962,7 @@ mod tests {
         let rows = render_footer(60, 16, Some("scanning transcripts... 62%"));
 
         assert_eq!(rows[13], " scanning transcripts... 62%");
-        assert_eq!(rows[14], " 30m · 2h · 8h · 24h · 7d · 30d");
+        assert_eq!(rows[14], " 5m · 30m · 2h · 8h · 24h · 7d · 30d");
     }
 
     #[test]
