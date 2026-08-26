@@ -68,9 +68,15 @@ of ten, not by five orders of magnitude -- and stacked bands only add up to the 
 linear axis. Set `stats_use_log = true` if one family dwarfs the rest badly enough to need
 it, accepting that the bands stop summing to the visible total.
 
-The bands are filled only on the [pixel path](../../../#kitty-pixel-rendering). With cell
-markers the graph degrades to the band boundaries as plain lines, which is still readable --
-the same trade the pixel path makes everywhere else.
+Each band is drawn as a **rounded staircase**, holding a bucket's value flat across the
+minute it covers. That is not only cosmetic: a bucket is a total over a minute, not a
+reading at an instant, so sloping between bucket centres would spread one busy minute over
+three and understate its peak. The corner rounding is cosmetic, and is what makes the chart
+read the way `/status` does rather than like a bar code.
+
+Both the fill and the stepping are pixel-path-only. With cell markers the graph degrades to
+straight-joined band boundaries, which is still readable -- the same trade the pixel path
+makes everywhere else.
 
 This is the only part of a Claude harvest that reads transcripts outside the live sessions,
 so it is skipped entirely unless the widget is in your layout.

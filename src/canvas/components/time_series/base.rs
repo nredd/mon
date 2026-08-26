@@ -31,6 +31,7 @@ pub(crate) struct GraphData<'a, F = f64> {
     style: Style,
     name: Option<Cow<'a, str>>,
     filled: bool,
+    stepped: bool,
 }
 
 impl<'a, F> GraphData<'a, F> {
@@ -61,6 +62,16 @@ impl<'a, F> GraphData<'a, F> {
     /// trade the rest of the pixel path makes.
     pub fn filled(mut self, filled: bool) -> Self {
         self.filled = filled;
+        self
+    }
+
+    /// Join this series as a rounded staircase rather than as straight segments.
+    ///
+    /// For bucketed data, straight segments misstate the data: they slope between bucket
+    /// centres, so one busy minute reads as a triangle spread over three. Like
+    /// [`GraphData::filled`], only the pixel path honours this.
+    pub fn stepped(mut self, stepped: bool) -> Self {
+        self.stepped = stepped;
         self
     }
 }
@@ -394,6 +405,7 @@ fn collect_series<F: Copy + Default + Into<f64>>(
                 points,
                 rgb,
                 filled: data.filled,
+                stepped: data.stepped,
             })
         })
         .collect()
@@ -406,8 +418,10 @@ fn create_dataset<'a, F: Copy + Default + Into<f64>>(data: &'a GraphData<'a, F>)
         values,
         style,
         name,
-        // Only the pixel path fills; the cell chart draws every series as a line.
+        // Only the pixel path fills and steps; the cell chart draws every series as a
+        // straight-joined line.
         filled: _,
+        stepped: _,
     } = data;
 
     let Some(values) = values else {

@@ -362,6 +362,115 @@ pub struct Series {
     /// running totals draws them largest-first with this set, and each fill covers the
     /// lower part of the one before it, leaving a visible band per series.
     pub filled: bool,
+    /// Whether to join points as a rounded staircase rather than straight segments.
+    ///
+    /// For bucketed data -- a total per minute, say -- straight segments are a lie. They
+    /// slope between bucket centres, so a single busy minute reads as a triangle spread
+    /// over three, and the area under the line is not the total that was actually spent.
+    /// A staircase holds each bucket's value across the time it covers, which is what
+    /// Claude Code's own `/status` screen draws.
+    pub stepped: bool,
+}
+
+/// Corner radius of a stepped series, in pixels.
+///
+/// Purely cosmetic. A raw staircase is correct but hard, and the corners are what make
+/// `/status` read as a chart rather than as a bar code.
+const CORNER_RADIUS: f64 = 8.0;
+
+/// Line segments per rounded corner. Eight is past the point where the joins are visible
+/// at terminal resolution.
+const CORNER_SEGMENTS: usize = 8;
+
+/// Turn samples into a staircase with rounded corners, in data space.
+///
+/// `sx`/`sy` map data units to pixels. Rounding happens in pixel space and is mapped back
+/// afterwards, because a radius is only isotropic there -- x is in milliseconds and y in
+/// tokens, and a radius expressed in either would come out as a wildly lopsided ellipse.
+/// Both maps are affine, so the round trip is exact.
+///
+/// Each sample holds until the next one, and the last holds to `x_hi`, so a bucket covers
+/// the span of time it was measured over rather than ending at its own start.
+fn stepped_path(
+    points: &[(f64, f64)], x_hi: f64, sx: f64, sy: f64, radius: f64,
+) -> Vec<(f64, f64)> {
+    if points.len() < 2 {
+        return points.to_vec();
+    }
+
+    let mut steps: Vec<(f64, f64)> = Vec::with_capacity(points.len() * 2 + 1);
+    steps.push((points[0].0 * sx, points[0].1 * sy));
+    for pair in points.windows(2) {
+        let (previous, current) = (pair[0], pair[1]);
+        steps.push((current.0 * sx, previous.1 * sy));
+        steps.push((current.0 * sx, current.1 * sy));
+    }
+    if let Some(last) = points.last()
+        && x_hi > last.0
+    {
+        steps.push((x_hi * sx, last.1 * sy));
+    }
+
+    // A repeated bucket value produces a zero-length riser, which has no direction to cut
+    // a corner along. Drop those before rounding rather than special-casing them inside it.
+    steps.dedup_by(|a, b| (a.0 - b.0).abs() < f64::EPSILON && (a.1 - b.1).abs() < f64::EPSILON);
+
+    round_corners(&steps, radius)
+        .into_iter()
+        .map(|(px, py)| (px / sx, py / sy))
+        .collect()
+}
+
+/// Replace every interior vertex of `pts` with a rounded corner.
+///
+/// Cuts back `radius` along each of the two adjacent segments and joins the cut points with
+/// a quadratic Bezier whose control point is the original vertex. For the axis-aligned
+/// corners of a staircase that is exactly a quarter-ellipse. The radius is clamped to half
+/// of the shorter adjacent segment so neighbouring corners cannot eat into each other.
+fn round_corners(pts: &[(f64, f64)], radius: f64) -> Vec<(f64, f64)> {
+    if pts.len() < 3 || radius <= 0.0 {
+        return pts.to_vec();
+    }
+
+    let mut out = Vec::with_capacity(pts.len() * (CORNER_SEGMENTS + 2));
+    out.push(pts[0]);
+
+    for window in pts.windows(3) {
+        let (a, v, b) = (window[0], window[1], window[2]);
+        let (to_a, to_b) = ((a.0 - v.0, a.1 - v.1), (b.0 - v.0, b.1 - v.1));
+        let (len_a, len_b) = (to_a.0.hypot(to_a.1), to_b.0.hypot(to_b.1));
+
+        if len_a <= f64::EPSILON || len_b <= f64::EPSILON {
+            out.push(v);
+            continue;
+        }
+
+        let r = radius.min(len_a / 2.0).min(len_b / 2.0);
+        let p = (
+            (to_a.0 / len_a).mul_add(r, v.0),
+            (to_a.1 / len_a).mul_add(r, v.1),
+        );
+        let q = (
+            (to_b.0 / len_b).mul_add(r, v.0),
+            (to_b.1 / len_b).mul_add(r, v.1),
+        );
+
+        for step in 0..=CORNER_SEGMENTS {
+            #[expect(
+                clippy::cast_precision_loss,
+                reason = "CORNER_SEGMENTS is single digit"
+            )]
+            let t = step as f64 / CORNER_SEGMENTS as f64;
+            let u = 1.0 - t;
+            out.push((
+                (u * u).mul_add(p.0, (2.0 * u * t).mul_add(v.0, t * t * q.0)),
+                (u * u).mul_add(p.1, (2.0 * u * t).mul_add(v.1, t * t * q.1)),
+            ));
+        }
+    }
+
+    out.push(pts[pts.len() - 1]);
+    out
 }
 
 /// Rasterise a set of series into an RGB buffer, `stroke` pixels wide.
@@ -414,24 +523,35 @@ pub fn rasterize(
             .set_all_label_area_size(0)
             .build_cartesian_2d(x_lo..x_hi, y_lo..y_hi)?;
 
+        // Data units per pixel, for the stepped path's corner radius.
+        let sx = f64::from(width) / (x_hi - x_lo);
+        let sy = f64::from(height) / (y_hi - y_lo);
+
         for line in series {
             if line.points.is_empty() {
                 continue;
             }
 
             let colour = RGBColor(line.rgb.0, line.rgb.1, line.rgb.2);
+            let stepped;
+            let points: &[(f64, f64)] = if line.stepped {
+                stepped = stepped_path(&line.points, x_hi, sx, sy, CORNER_RADIUS);
+                &stepped
+            } else {
+                &line.points
+            };
 
             if line.filled {
                 // Filled to the bottom of the plot rather than to zero, so a log axis --
                 // where zero is negative infinity and the baseline is the axis minimum --
                 // does not leave the band floating.
                 chart.draw_series(
-                    AreaSeries::new(line.points.iter().copied(), y_lo, colour.filled())
+                    AreaSeries::new(points.iter().copied(), y_lo, colour.filled())
                         .border_style(colour.stroke_width(stroke)),
                 )?;
             } else {
                 chart.draw_series(LineSeries::new(
-                    line.points.iter().copied(),
+                    points.iter().copied(),
                     colour.stroke_width(stroke),
                 ))?;
             }
@@ -546,6 +666,7 @@ mod tests {
                 points: vec![(-1.0, 0.5), (0.0, 0.5)],
                 rgb: red,
                 filled: false,
+                stepped: false,
             }],
         );
 
@@ -595,6 +716,7 @@ mod tests {
                 points: vec![(-60.0, 5.0), (0.0, 95.0)],
                 rgb: red,
                 filled: false,
+                stepped: false,
             }],
         );
 
@@ -635,6 +757,7 @@ mod tests {
                 points: vec![(-60.0, 5.0), (0.0, 95.0)],
                 rgb: red,
                 filled: false,
+                stepped: false,
             }],
         );
 
@@ -751,6 +874,7 @@ mod raster_tests {
                 points: vec![(-60.0, 50.0), (0.0, 50.0)],
                 rgb: red,
                 filled: false,
+                stepped: false,
             }],
         );
 
@@ -789,6 +913,7 @@ mod raster_tests {
                 points: vec![(-60.0, 10.0), (0.0, 90.0)],
                 rgb: green,
                 filled: false,
+                stepped: false,
             }],
         );
 
@@ -851,6 +976,7 @@ mod raster_tests {
                 points: vec![],
                 rgb: (1, 2, 3),
                 filled: false,
+                stepped: false,
             }],
         );
     }
@@ -994,5 +1120,110 @@ impl std::fmt::Debug for PixelRenderer {
             .field("mode", &self.mode)
             .field("active", &self.is_active())
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod stepped_tests {
+    use super::*;
+
+    /// Data-space scales for a 100x100 image over x in -100..0 and y in 0..100, so a data
+    /// unit is a pixel and a radius reads directly.
+    const UNIT: (f64, f64) = (1.0, 1.0);
+
+    #[test]
+    fn a_bucket_holds_its_value_across_the_time_it_covers() {
+        // The whole point of stepping. Straight segments slope between bucket centres, so
+        // a single busy minute reads as a triangle spread over three and its peak is
+        // understated. Sampling the staircase midway through the busy bucket has to give
+        // the bucket's own value, not something interpolated toward its neighbours.
+        let points = [(-30.0, 0.0), (-20.0, 90.0), (-10.0, 0.0)];
+        let path = stepped_path(&points, 0.0, UNIT.0, UNIT.1, 0.0);
+
+        let held = path
+            .windows(2)
+            .any(|pair| pair[0] == (-20.0, 90.0) && pair[1] == (-10.0, 90.0));
+        assert!(
+            held,
+            "the busy bucket must run flat at its own value from -20 to -10, got {path:?}"
+        );
+    }
+
+    #[test]
+    fn the_last_bucket_runs_out_to_the_right_edge() {
+        // Otherwise the newest minute is drawn as a zero-width sliver at its own start
+        // time and the graph looks like it stops short of "now".
+        let points = [(-30.0, 10.0), (-20.0, 40.0)];
+        let path = stepped_path(&points, 0.0, UNIT.0, UNIT.1, 0.0);
+
+        let last = path.last().copied().expect("a staircase has points");
+        assert!(
+            (last.0 - 0.0).abs() < 0.001 && (last.1 - 40.0).abs() < 0.001,
+            "expected the final value held out to x=0, got {last:?}"
+        );
+    }
+
+    #[test]
+    fn rounding_never_leaves_the_staircase() {
+        // A quadratic Bezier stays inside the convex hull of its control points, so a
+        // rounded corner cannot overshoot the step it belongs to. If it could, a band
+        // could poke above its own peak or below the axis.
+        let points = [(-40.0, 0.0), (-30.0, 80.0), (-20.0, 20.0), (-10.0, 60.0)];
+        let path = stepped_path(&points, 0.0, UNIT.0, UNIT.1, 8.0);
+
+        for (x, y) in path {
+            assert!(
+                (-40.0..=0.0).contains(&x),
+                "{x} escaped the plotted time range"
+            );
+            assert!((0.0..=80.0).contains(&y), "{y} escaped the value range");
+        }
+    }
+
+    #[test]
+    fn a_radius_is_clamped_so_neighbouring_corners_cannot_eat_each_other() {
+        // Buckets are narrow -- an hour at one a minute over a normal-width widget is
+        // around thirty pixels a tread -- so an unclamped radius would round straight
+        // through the next corner and turn the staircase back into the sloped line it was
+        // supposed to replace.
+        let points = [(-6.0, 0.0), (-4.0, 50.0), (-2.0, 0.0)];
+        let path = stepped_path(&points, 0.0, UNIT.0, UNIT.1, 1000.0);
+
+        let peak = path.iter().map(|(_, y)| *y).fold(f64::MIN, f64::max);
+        assert!(
+            peak >= 25.0,
+            "an over-clamped radius flattened the peak to {peak}, expected at least half"
+        );
+    }
+
+    #[test]
+    fn a_repeated_value_does_not_produce_a_degenerate_corner() {
+        // Equal neighbours give a zero-length riser, which has no direction to cut a
+        // corner along. Left in, it would produce NaNs from the normalisation and
+        // `plotters` would silently drop the whole series.
+        let points = [(-30.0, 20.0), (-20.0, 20.0), (-10.0, 20.0)];
+        let path = stepped_path(&points, 0.0, UNIT.0, UNIT.1, 8.0);
+
+        assert!(
+            path.iter().all(|(x, y)| x.is_finite() && y.is_finite()),
+            "a flat run produced non-finite points: {path:?}"
+        );
+    }
+
+    #[test]
+    fn a_single_sample_is_left_alone() {
+        let points = [(-10.0, 5.0)];
+        assert_eq!(stepped_path(&points, 0.0, UNIT.0, UNIT.1, 8.0), points);
+    }
+
+    #[test]
+    fn a_zero_radius_leaves_the_corners_square() {
+        let points = [(-30.0, 0.0), (-20.0, 50.0)];
+        let square = stepped_path(&points, 0.0, UNIT.0, UNIT.1, 0.0);
+
+        assert!(
+            square.iter().all(|(_, y)| *y == 0.0 || *y == 50.0),
+            "a zero radius must not introduce intermediate heights, got {square:?}"
+        );
     }
 }

@@ -88,6 +88,11 @@ impl Painter {
                         .time(&stacked.times)
                         .values(&layer.running)
                         .filled(true)
+                        // A bucket is a total over a minute, not a reading at an instant.
+                        // Sloping between bucket centres would spread one busy minute over
+                        // three and understate its peak; a staircase holds each bucket flat
+                        // across the minute it covers, which is what `/status` draws.
+                        .stepped(true)
                 })
                 .collect();
 

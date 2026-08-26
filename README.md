@@ -52,7 +52,7 @@ Three widgets reading live [Claude Code](https://claude.com/claude-code) activit
   tokens, cost, context-window occupancy, subagent count
 - `claude_graph` -- token throughput by model family over time, on a log axis by default
 - `claude_stats` -- the equivalent of Claude Code's own `/status` stats screen, as stacked
-  bands of token spend by model family. That screen bars by day; this buckets by minute over
+  rounded-staircase bands of token spend by model family. That screen bars by day; this buckets by minute over
   the last hour, so the shape of a working session is visible rather than collapsed into a
   single bar. Built by walking `~/.claude/projects` and attributing each record to a bucket
   from its own timestamp, so the window is complete the moment the widget appears rather
