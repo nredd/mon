@@ -1,0 +1,21 @@
+# Both agent widgets in an explicit layout, so the canvas dispatch path is exercised.
+# Neither is in the default layout, and the two dispatch matches in `canvas.rs` all end in
+# `_ => {}`, so a missing arm compiles clean and silently renders nothing.
+
+[[row]]
+  [[row.child]]
+  type = "agent_stats"
+  source = "claude"
+  default = true
+
+[[row]]
+  [[row.child]]
+  type = "agent_graph"
+  source = "claude"
+
+[agent]
+use_log = true
+legend_position = "top-right"
+
+[styles.agent]
+colours = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181"]

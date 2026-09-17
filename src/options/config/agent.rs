@@ -1,13 +1,16 @@
 use serde::Deserialize;
 
-/// Claude widget configuration.
+/// Agent widget configuration.
 ///
-/// Covers the sessions table (`claude`), the token-rate graph (`claude_graph`), and the
-/// token-history stats graph (`claude_stats`).
+/// Covers the token-rate graph (`agent_graph`) and the token-history stats graph
+/// (`agent_stats`). Both widgets are harness-agnostic: which harness (or harnesses) a
+/// particular widget instance reads is set per-instance via the `source` field on that
+/// widget's layout entry (`[[row.child]]`), not here -- `source = "claude" | "codex" |
+/// "pi" | "all"`.
 #[derive(Clone, Debug, Default, Deserialize)]
 #[cfg_attr(feature = "generate_schema", derive(schemars::JsonSchema))]
 #[cfg_attr(test, serde(deny_unknown_fields), derive(PartialEq, Eq))]
-pub(crate) struct ClaudeConfig {
+pub(crate) struct AgentConfig {
     /// Whether the token-rate graph uses a logarithmic y-axis. Defaults to true.
     ///
     /// On by default because the series genuinely span orders of magnitude: cache reads run

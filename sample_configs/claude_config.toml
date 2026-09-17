@@ -1,8 +1,8 @@
 # A Claude-Code-only layout for mon.
 #
-# Everything system-related is dropped. What is left is the three Claude widgets, stacked
-# largest-first: the per-minute token history (mon's answer to Claude Code's own `/status`
-# Models tab), the live token-rate graph underneath it, and the session table at the bottom.
+# `agent_graph`/`agent_stats` are harness-agnostic widgets -- this config just points both
+# at `source = "claude"`. History on top (mon's answer to Claude Code's own `/status` Models
+# tab), the live token-rate graph underneath it.
 #
 # Run it with:
 #
@@ -11,13 +11,15 @@
 # Drop `--pixel_graphs kitty` outside Ghostty/Kitty/WezTerm and the graphs fall back to
 # braille cell markers.
 #
-# There is nothing to point at `~/.claude` here. `claude-metrics` resolves `$HOME/.claude`
+# There is nothing to point at `~/.claude` here. `harness-metrics` resolves `$HOME/.claude`
 # itself and reads the transcripts on disk, so this config works as-is on any machine that
-# has run Claude Code.
+# has run Claude Code. Every harness -- Claude included -- is read a tick behind the actual
+# model call: there is no live/PID-registry fast path for any of them, on purpose, so no
+# harness gets special-cased over the others.
 
 [flags]
 # One collection tick a second. The history widget rebuilds its window from disk rather
-# than accumulating live, so this only paces the rate graph and the session table.
+# than accumulating live, so this only paces the rate graph.
 rate = "1s"
 
 # Keep an hour of rate samples so the token graph can zoom out to match the history
@@ -29,13 +31,7 @@ time_delta = "30s"
 # Both graphs carry a legend, so the extra time axis under each one is noise.
 hide_time = true
 
-# A rule between the session table's header and its rows.
-table_gap = "line"
-
-# Nothing here can stop a process, so take the kill path off the table entirely.
-read_only = true
-
-[claude]
+[agent]
 # The rate graph spans orders of magnitude -- cache reads run into millions of tokens a
 # second while fresh input tokens are single digits -- so it stays logarithmic.
 use_log = true
@@ -47,7 +43,7 @@ stats_use_log = false
 # Legends sit top-right on both graphs, out of the way of the rising edge.
 legend_position = "top-right"
 
-[styles.claude]
+[styles.agent]
 # Model families in fixed order: Opus, Sonnet, Haiku, Fable, Other. These are mon's
 # built-in defaults, repeated here so they are easy to retune. They are picked for a dark
 # surface and checked for a lightness band, a chroma floor, adjacent colour-blind
@@ -63,22 +59,16 @@ widget_title = { colour = "#d95926", bold = true }
 graph_colour = "#6a6a6a"
 legend_text = { colour = "#b4b4b4" }
 
-[styles.tables]
-headers = { colour = "#d95926", bold = true }
-
-# Layout: history on top, rate underneath, sessions at the bottom.
+# Layout: history on top, rate underneath.
 [[row]]
-ratio = 44
+ratio = 58
 [[row.child]]
-type = "claude_stats"
-
-[[row]]
-ratio = 32
-[[row.child]]
-type = "claude_graph"
-
-[[row]]
-ratio = 24
-[[row.child]]
-type = "claude"
+type = "agent_stats"
+source = "claude"
 default = true
+
+[[row]]
+ratio = 42
+[[row.child]]
+type = "agent_graph"
+source = "claude"

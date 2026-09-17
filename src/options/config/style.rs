@@ -1,8 +1,8 @@
 //! Config options around styling.
 
+mod agent;
 mod battery;
 mod borders;
-mod claude;
 mod cpu;
 mod disk_io_graph;
 mod graphs;
@@ -17,8 +17,8 @@ mod widgets;
 
 use std::borrow::Cow;
 
+use agent::AgentStyle;
 use battery::BatteryStyle;
-use claude::ClaudeStyle;
 use cpu::CpuStyle;
 use disk_io_graph::DiskIoGraphStyle;
 use graphs::GraphStyle;
@@ -96,8 +96,8 @@ pub(crate) struct StyleConfig {
     /// Styling for the power graph widget.
     pub(crate) power: Option<PowerStyle>,
 
-    /// Styling for the Claude token-rate graph widget.
-    pub(crate) claude: Option<ClaudeStyle>,
+    /// Styling for the agent token-rate and token-history graph widgets.
+    pub(crate) agent: Option<AgentStyle>,
 
     /// Styling for the temperature graph widget.
     pub(crate) temp_graph: Option<TempGraphStyle>,
@@ -137,7 +137,7 @@ pub struct Styles {
     pub(crate) disk_io_read_colour_styles: Vec<Style>,
     pub(crate) disk_io_write_colour_styles: Vec<Style>,
     pub(crate) power_colour_styles: Vec<Style>,
-    pub(crate) claude_colour_styles: Vec<Style>,
+    pub(crate) agent_colour_styles: Vec<Style>,
     pub(crate) border_style: Style,
     pub(crate) highlighted_border_style: Style,
     pub(crate) text_style: Style,
@@ -225,8 +225,8 @@ impl Styles {
         // Power graph
         set_colour_list!(self.power_colour_styles, config.power, colours);
 
-        // Claude graph
-        set_colour_list!(self.claude_colour_styles, config.claude, colours);
+        // Agent graphs
+        set_colour_list!(self.agent_colour_styles, config.agent, colours);
 
         // Memory
         set_colour!(self.ram_style, config.memory, ram_colour);

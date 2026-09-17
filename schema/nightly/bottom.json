@@ -5,10 +5,10 @@
   "description": "https://bottom.pages.dev/nightly/configuration/config-file/",
   "type": "object",
   "properties": {
-    "claude": {
+    "agent": {
       "anyOf": [
         {
-          "$ref": "#/$defs/ClaudeConfig"
+          "$ref": "#/$defs/AgentConfig"
         },
         {
           "type": "null"
@@ -136,6 +136,49 @@
     }
   },
   "$defs": {
+    "AgentConfig": {
+      "description": "Agent widget configuration.\n\nCovers the token-rate graph (`agent_graph`) and the token-history stats graph\n(`agent_stats`). Both widgets are harness-agnostic: which harness (or harnesses) a\nparticular widget instance reads is set per-instance via the `source` field on that\nwidget's layout entry (`[[row.child]]`), not here -- `source = \"claude\" | \"codex\" |\n\"pi\" | \"all\"`.",
+      "type": "object",
+      "properties": {
+        "legend_position": {
+          "description": "Where to position the graph legend within the widget.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stats_use_log": {
+          "description": "Whether the token-history stats graph uses a logarithmic y-axis. Defaults to false.\n\nOff by default, unlike `use_log`. A bucketed total spans a far narrower range than\nan instantaneous rate -- a busy minute and a quiet one differ by a factor of ten,\nnot by five orders of magnitude -- and stacked bands only sum to the total on a\nlinear axis.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "use_log": {
+          "description": "Whether the token-rate graph uses a logarithmic y-axis. Defaults to true.\n\nOn by default because the series genuinely span orders of magnitude: cache reads run\ninto the millions of tokens per second while fresh input tokens are single digits,\nand on a linear axis everything but the largest series sits flat on the floor.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      }
+    },
+    "AgentStyle": {
+      "description": "Styling specific to the agent token-rate and token-history graph widgets.\n\nThe `colours` list is indexed by whichever grouping is active for a given widget\ninstance: model-family labels (e.g. Opus, Sonnet, Haiku, Fable, Other) when that\nwidget's `source` names a single harness, or harness labels (`Claude`, `Codex`, `Pi`)\nwhen `source = \"all\"`.",
+      "type": "object",
+      "properties": {
+        "colours": {
+          "description": "Colour of each series' graph line, indexed by draw order (see the struct docs for\nwhat \"draw order\" means for a given widget's `source`).",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/ColourStr"
+          }
+        }
+      }
+    },
     "BatteryStyle": {
       "description": "Styling specific to the battery widget.",
       "type": "object",
@@ -172,42 +215,6 @@
               "type": "null"
             }
           ]
-        }
-      }
-    },
-    "ClaudeConfig": {
-      "description": "Claude widget configuration.\n\nCovers both the sessions table (`claude`) and the token-rate graph (`claude_graph`).",
-      "type": "object",
-      "properties": {
-        "legend_position": {
-          "description": "Where to position the graph legend within the widget.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "use_log": {
-          "description": "Whether the token-rate graph uses a logarithmic y-axis. Defaults to true.\n\nOn by default because the series genuinely span orders of magnitude: cache reads run\ninto the millions of tokens per second while fresh input tokens are single digits,\nand on a linear axis everything but the largest series sits flat on the floor.",
-          "type": [
-            "boolean",
-            "null"
-          ]
-        }
-      }
-    },
-    "ClaudeStyle": {
-      "description": "Styling specific to the Claude token-rate graph widget.",
-      "type": "object",
-      "properties": {
-        "colours": {
-          "description": "Colour of each model family's graph line. Read in family order: Opus, Sonnet, Haiku,\nFable, then Other.",
-          "type": [
-            "array",
-            "null"
-          ],
-          "items": {
-            "$ref": "#/$defs/ColourStr"
-          }
         }
       }
     },
@@ -511,6 +518,13 @@
           "format": "uint16",
           "maximum": 65535,
           "minimum": 0
+        },
+        "source": {
+          "description": "Which harness (or harnesses) an `agent_graph`/`agent_stats` widget reads.\n`\"claude\"` | `\"codex\"` | `\"pi\"` | `\"all\"`. Ignored by every other widget type.\nDefaults to `\"claude\"` when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "type": {
           "type": "string"
@@ -1478,22 +1492,22 @@
       "description": "Style-related configs.",
       "type": "object",
       "properties": {
-        "battery": {
-          "description": "Styling for the battery widget.",
+        "agent": {
+          "description": "Styling for the agent token-rate and token-history graph widgets.",
           "anyOf": [
             {
-              "$ref": "#/$defs/BatteryStyle"
+              "$ref": "#/$defs/AgentStyle"
             },
             {
               "type": "null"
             }
           ]
         },
-        "claude": {
-          "description": "Styling for the Claude token-rate graph widget.",
+        "battery": {
+          "description": "Styling for the battery widget.",
           "anyOf": [
             {
-              "$ref": "#/$defs/ClaudeStyle"
+              "$ref": "#/$defs/BatteryStyle"
             },
             {
               "type": "null"

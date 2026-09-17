@@ -64,7 +64,7 @@ impl Styles {
             // These are the dataviz categorical slots 1-5, stepped for a dark surface.
             // Validated: lightness band, chroma floor, adjacent CVD separation (worst
             // 8.4), normal-vision floor (worst 19.3), and 3:1 contrast all pass.
-            claude_colour_styles: vec![
+            agent_colour_styles: vec![
                 hex!("#3987e5"),
                 hex!("#d95926"),
                 hex!("#199e70"),
@@ -133,7 +133,7 @@ impl Styles {
             // The same eight hues stepped for a light surface. Three of these sit below
             // 3:1 contrast there, so the relief rule applies -- satisfied because the
             // graph legend direct-labels every series with its family name.
-            claude_colour_styles: vec![
+            agent_colour_styles: vec![
                 hex!("#2a78d6"),
                 hex!("#eb6834"),
                 hex!("#1baf7a"),

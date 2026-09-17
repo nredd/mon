@@ -115,10 +115,10 @@ impl Row {
                                 .total_col_row_ratio(2)
                                 .ratio(width_ratio)
                             }
-                            _ => BottomCol::new(vec![BottomColRow::new(vec![BottomWidget::new(
-                                widget_type,
-                                *iter_id,
-                            )])])
+                            _ => BottomCol::new(vec![BottomColRow::new(vec![
+                                BottomWidget::new(widget_type, *iter_id)
+                                    .source(widget.source.clone()),
+                            ])])
                             .ratio(width_ratio),
                         });
                     }
@@ -186,10 +186,10 @@ impl Row {
                                     total_col_row_ratio += col_row_height_ratio;
 
                                     col_row_children.push(
-                                        BottomColRow::new(vec![BottomWidget::new(
-                                            widget_type,
-                                            *iter_id,
-                                        )])
+                                        BottomColRow::new(vec![
+                                            BottomWidget::new(widget_type, *iter_id)
+                                                .source(widget.source.clone()),
+                                        ])
                                         .ratio(col_row_height_ratio),
                                     )
                                 }
@@ -238,6 +238,10 @@ pub struct FinalWidget {
     #[serde(rename = "type")]
     pub widget_type: String,
     pub default: Option<bool>,
+    /// Which harness (or harnesses) an `agent_graph`/`agent_stats` widget reads.
+    /// `"claude"` | `"codex"` | `"pi"` | `"all"`. Ignored by every other widget type.
+    /// Defaults to `"claude"` when omitted.
+    pub source: Option<String>,
 }
 
 #[cfg(test)]

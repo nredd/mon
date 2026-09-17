@@ -1,10 +1,10 @@
-//! Folding raw model IDs into families.
+//! Folding raw Claude model IDs into families.
 
 use std::fmt;
 
-/// A model family, folded from a raw model ID.
+/// A Claude model family, folded from a raw model ID.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum ModelFamily {
+pub enum ClaudeFamily {
     /// Claude Opus.
     Opus,
     /// Claude Sonnet.
@@ -17,10 +17,10 @@ pub enum ModelFamily {
     Other,
 }
 
-impl ModelFamily {
+impl ClaudeFamily {
     /// Fold a raw model ID such as `claude-opus-5[1m]` or `claude-haiku-4-5-20251001`.
     ///
-    /// This is a **prefix** match on purpose. Model IDs are not stable in shape: real
+    /// This is a **substring** match on purpose. Model IDs are not stable in shape: real
     /// transcripts on this machine carry both `claude-sonnet-5` (undated) and
     /// `claude-haiku-4-5-20251001` (dated), and new IDs appear without warning. An
     /// exact-match table silently drops every future ID into `Other`, which is exactly the
@@ -34,15 +34,15 @@ impl ModelFamily {
         // Match on the family segment anywhere in the ID rather than anchoring at the
         // start, so vendor-prefixed IDs work without a separate table.
         if id.contains("opus") {
-            ModelFamily::Opus
+            ClaudeFamily::Opus
         } else if id.contains("sonnet") {
-            ModelFamily::Sonnet
+            ClaudeFamily::Sonnet
         } else if id.contains("haiku") {
-            ModelFamily::Haiku
+            ClaudeFamily::Haiku
         } else if id.contains("fable") {
-            ModelFamily::Fable
+            ClaudeFamily::Fable
         } else {
-            ModelFamily::Other
+            ClaudeFamily::Other
         }
     }
 
@@ -63,16 +63,16 @@ impl ModelFamily {
     #[must_use]
     pub fn label(self) -> &'static str {
         match self {
-            ModelFamily::Opus => "Opus",
-            ModelFamily::Sonnet => "Sonnet",
-            ModelFamily::Haiku => "Haiku",
-            ModelFamily::Fable => "Fable",
-            ModelFamily::Other => "Other",
+            ClaudeFamily::Opus => "Opus",
+            ClaudeFamily::Sonnet => "Sonnet",
+            ClaudeFamily::Haiku => "Haiku",
+            ClaudeFamily::Fable => "Fable",
+            ClaudeFamily::Other => "Other",
         }
     }
 }
 
-impl fmt::Display for ModelFamily {
+impl fmt::Display for ClaudeFamily {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.label())
     }
@@ -84,40 +84,43 @@ mod tests {
     // parse is a broken test, not a runtime condition to handle.
     #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-    use super::ModelFamily;
+    use super::ClaudeFamily;
 
     #[test]
     fn undated_and_dated_ids_fold_to_the_same_family() {
         // Both of these are real IDs seen in transcripts on this machine. An exact-match
         // table would put one of them in `Other`.
-        assert_eq!(ModelFamily::from_id("claude-sonnet-5"), ModelFamily::Sonnet);
         assert_eq!(
-            ModelFamily::from_id("claude-haiku-4-5-20251001"),
-            ModelFamily::Haiku
+            ClaudeFamily::from_id("claude-sonnet-5"),
+            ClaudeFamily::Sonnet
+        );
+        assert_eq!(
+            ClaudeFamily::from_id("claude-haiku-4-5-20251001"),
+            ClaudeFamily::Haiku
         );
     }
 
     #[test]
     fn suffixed_and_vendor_prefixed_ids_still_fold() {
         assert_eq!(
-            ModelFamily::from_id("claude-opus-5[1m]"),
-            ModelFamily::Opus,
+            ClaudeFamily::from_id("claude-opus-5[1m]"),
+            ClaudeFamily::Opus,
             "a context-window suffix must not change the family"
         );
         assert_eq!(
-            ModelFamily::from_id("us.anthropic.claude-opus-5-v1:0"),
-            ModelFamily::Opus,
+            ClaudeFamily::from_id("us.anthropic.claude-opus-5-v1:0"),
+            ClaudeFamily::Opus,
             "a Bedrock-style vendor prefix must not change the family"
         );
-        assert_eq!(ModelFamily::from_id("claude-fable-5"), ModelFamily::Fable);
+        assert_eq!(ClaudeFamily::from_id("claude-fable-5"), ClaudeFamily::Fable);
     }
 
     #[test]
     fn unknown_ids_fold_to_other_rather_than_failing() {
         assert_eq!(
-            ModelFamily::from_id("some-future-model"),
-            ModelFamily::Other
+            ClaudeFamily::from_id("some-future-model"),
+            ClaudeFamily::Other
         );
-        assert_eq!(ModelFamily::from_id(""), ModelFamily::Other);
+        assert_eq!(ClaudeFamily::from_id(""), ClaudeFamily::Other);
     }
 }

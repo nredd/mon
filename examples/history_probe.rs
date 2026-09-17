@@ -6,23 +6,24 @@
 
 use std::time::Duration;
 
-use claude_metrics::TokenHistory;
+use harness_metrics::{Harness, HarnessLedger};
 
 fn main() {
-    let Some(home) = std::env::var_os("HOME") else {
+    let Some(mut ledger) = HarnessLedger::new(
+        Harness::Claude,
+        Duration::from_secs(3600),
+        Duration::from_secs(60),
+    ) else {
         eprintln!("no HOME");
         return;
     };
 
-    let root = std::path::Path::new(&home).join(".claude");
-    let mut history = TokenHistory::new(&root, Duration::from_secs(3600), Duration::from_secs(60));
-
     let started = std::time::Instant::now();
-    history.refresh();
+    ledger.refresh();
     let elapsed = started.elapsed();
 
-    let families = history.families();
-    let buckets = history.buckets();
+    let families = ledger.families_present();
+    let buckets = ledger.buckets();
 
     println!("refresh took {elapsed:?}");
     println!("families: {families:?}");
@@ -31,7 +32,7 @@ fn main() {
     for bucket in buckets.iter().filter(|b| b.total() > 0) {
         let per: Vec<String> = families
             .iter()
-            .map(|f| format!("{}={}", f.label(), bucket.total_for(*f)))
+            .map(|f| format!("{}={}", f, bucket.total_for(f)))
             .collect();
 
         println!(

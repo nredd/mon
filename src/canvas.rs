@@ -371,19 +371,13 @@ impl Painter {
                         rect[0],
                         app_state.current_widget.widget_id,
                     ),
-                    Claude => self.draw_claude_table(
+                    AgentStats => self.draw_agent_stats(
                         f,
                         app_state,
                         rect[0],
                         app_state.current_widget.widget_id,
                     ),
-                    ClaudeStats => self.draw_claude_stats(
-                        f,
-                        app_state,
-                        rect[0],
-                        app_state.current_widget.widget_id,
-                    ),
-                    ClaudeGraph => self.draw_claude_graph(
+                    AgentGraph => self.draw_agent_graph(
                         f,
                         app_state,
                         rect[0],
@@ -515,14 +509,11 @@ impl Painter {
                             Power => {
                                 self.draw_power_graph(f, app_state, vertical_chunks[3], widget_id)
                             }
-                            Claude => {
-                                self.draw_claude_table(f, app_state, vertical_chunks[3], widget_id)
+                            AgentGraph => {
+                                self.draw_agent_graph(f, app_state, vertical_chunks[3], widget_id)
                             }
-                            ClaudeGraph => {
-                                self.draw_claude_graph(f, app_state, vertical_chunks[3], widget_id)
-                            }
-                            ClaudeStats => {
-                                self.draw_claude_stats(f, app_state, vertical_chunks[3], widget_id)
+                            AgentStats => {
+                                self.draw_agent_stats(f, app_state, vertical_chunks[3], widget_id)
                             }
                             _ => {}
                         }
@@ -615,13 +606,8 @@ impl Painter {
                         self.draw_disk_io_graph(f, app_state, *draw_loc, widget.widget_id)
                     }
                     Power => self.draw_power_graph(f, app_state, *draw_loc, widget.widget_id),
-                    Claude => self.draw_claude_table(f, app_state, *draw_loc, widget.widget_id),
-                    ClaudeGraph => {
-                        self.draw_claude_graph(f, app_state, *draw_loc, widget.widget_id)
-                    }
-                    ClaudeStats => {
-                        self.draw_claude_stats(f, app_state, *draw_loc, widget.widget_id)
-                    }
+                    AgentGraph => self.draw_agent_graph(f, app_state, *draw_loc, widget.widget_id),
+                    AgentStats => self.draw_agent_stats(f, app_state, *draw_loc, widget.widget_id),
                     _ => {}
                 }
             }

@@ -35,6 +35,7 @@ use self::{
 use crate::{
     app::{filter::Filter, layout_manager::*, *},
     canvas::components::time_series::LegendPosition,
+    collection::agent::AgentSource,
     components::time_series::TimeseriesConfig,
     constants::*,
     utils::data_units::DataUnit,
@@ -145,10 +146,10 @@ macro_rules! config_or {
 /// The default config file sub-path.
 const DEFAULT_CONFIG_FILE_LOCATION: &str = "bottom/bottom.toml";
 
-/// The window the Claude stats graph plots, matching what the collector asks
-/// `claude-metrics` for. Asking the graph for more would draw dead space before the oldest
-/// bucket the history actually holds.
-const CLAUDE_STATS_WINDOW_MS: u64 = 60 * 60 * 1000;
+/// The window the agent stats graph plots, matching what the collector asks for.
+/// Asking the graph for more would draw dead space before the oldest bucket the history
+/// actually holds.
+const AGENT_STATS_WINDOW_MS: u64 = 60 * 60 * 1000;
 
 /// Returns the config path to use. If `override_config_path` is specified, then
 /// we will use that. If not, then return the "default" config path, which is:
@@ -387,9 +388,8 @@ pub(crate) fn init_app(args: BottomArgs, config: Config) -> Result<(App, BottomL
     let mut disk_state_map: FxHashMap<u64, DiskTableWidget> = FxHashMap::default();
     let mut disk_io_graph_state_map: FxHashMap<u64, DiskIoGraphWidgetState> = FxHashMap::default();
     let mut power_graph_state_map: FxHashMap<u64, PowerGraphWidgetState> = FxHashMap::default();
-    let mut claude_state_map: FxHashMap<u64, ClaudeWidgetState> = FxHashMap::default();
-    let mut claude_graph_state_map: FxHashMap<u64, ClaudeGraphWidgetState> = FxHashMap::default();
-    let mut claude_stats_state_map: FxHashMap<u64, ClaudeStatsWidgetState> = FxHashMap::default();
+    let mut agent_graph_state_map: FxHashMap<u64, AgentGraphWidgetState> = FxHashMap::default();
+    let mut agent_stats_state_map: FxHashMap<u64, AgentStatsWidgetState> = FxHashMap::default();
     let mut battery_state_map: FxHashMap<u64, BatteryWidgetState> = FxHashMap::default();
 
     let autohide_timer = if autohide_time {
@@ -442,7 +442,7 @@ pub(crate) fn init_app(args: BottomArgs, config: Config) -> Result<(App, BottomL
     let temperature_legend_position = get_temperature_legend_position(config)?;
     let disk_io_legend_position = get_disk_io_legend_position(config)?;
     let power_legend_position = get_power_legend_position(config)?;
-    let claude_legend_position = get_claude_legend_position(config)?;
+    let agent_legend_position = get_agent_legend_position(config)?;
     let disk_io_name_filter = match &config.disk_io_graph {
         Some(cfg) => get_ignore_list(&cfg.name_filter)
             .context("Update 'disk_io_graph.name_filter' in your config file")?,
@@ -551,7 +551,7 @@ pub(crate) fn init_app(args: BottomArgs, config: Config) -> Result<(App, BottomL
         temperature_legend_position,
         disk_io_legend_position,
         power_legend_position,
-        claude_legend_position,
+        agent_legend_position,
         disk_show_unmounted,
         disk_io_graph_show_unmounted,
     };
@@ -773,50 +773,68 @@ pub(crate) fn init_app(args: BottomArgs, config: Config) -> Result<(App, BottomL
                                 ),
                             );
                         }
-                        Claude => {
-                            claude_state_map.insert(
-                                widget.widget_id,
-                                ClaudeWidgetState::new(&app_config_fields, &styling),
-                            );
-                        }
-                        ClaudeGraph => {
+                        AgentGraph => {
                             // Log by default: cache reads run millions of tokens per second
                             // while fresh input tokens are single digits, so a linear axis
                             // flattens everything but the largest series onto the floor.
                             let use_log = config
-                                .claude
+                                .agent
                                 .as_ref()
                                 .and_then(|c| c.use_log)
                                 .unwrap_or(true);
 
-                            claude_graph_state_map.insert(
+                            let source = widget
+                                .source
+                                .as_deref()
+                                .map(str::parse::<AgentSource>)
+                                .transpose()?
+                                .unwrap_or_default();
+
+                            agent_graph_state_map.insert(
                                 widget.widget_id,
-                                ClaudeGraphWidgetState::new(ts_config, autohide_timer, use_log),
+                                AgentGraphWidgetState::new(
+                                    ts_config,
+                                    autohide_timer,
+                                    use_log,
+                                    source,
+                                ),
                             );
                         }
-                        ClaudeStats => {
+                        AgentStats => {
                             // Linear by default, unlike the rate graph. A bucketed total
                             // spans a far narrower range than an instantaneous rate, and
                             // stacked bands only sum to the total on a linear axis.
                             let use_log = config
-                                .claude
+                                .agent
                                 .as_ref()
                                 .and_then(|c| c.stats_use_log)
                                 .unwrap_or(false);
 
+                            let source = widget
+                                .source
+                                .as_deref()
+                                .map(str::parse::<AgentSource>)
+                                .transpose()?
+                                .unwrap_or_default();
+
                             // The window is the history's own, not the app-wide default:
-                            // the buckets `claude-metrics` hands over cover exactly an
-                            // hour, and a graph asking for more would draw dead space
-                            // before the oldest bucket.
+                            // the buckets the collector hands over cover exactly an hour,
+                            // and a graph asking for more would draw dead space before the
+                            // oldest bucket.
                             let stats_config = TimeseriesConfig {
-                                default_time_value: CLAUDE_STATS_WINDOW_MS,
-                                retention_ms: CLAUDE_STATS_WINDOW_MS,
+                                default_time_value: AGENT_STATS_WINDOW_MS,
+                                retention_ms: AGENT_STATS_WINDOW_MS,
                                 ..ts_config
                             };
 
-                            claude_stats_state_map.insert(
+                            agent_stats_state_map.insert(
                                 widget.widget_id,
-                                ClaudeStatsWidgetState::new(stats_config, autohide_timer, use_log),
+                                AgentStatsWidgetState::new(
+                                    stats_config,
+                                    autohide_timer,
+                                    use_log,
+                                    source,
+                                ),
                             );
                         }
                         Battery => {
@@ -869,10 +887,8 @@ pub(crate) fn init_app(args: BottomArgs, config: Config) -> Result<(App, BottomL
         use_disk_io_graph: used_widget_set.contains(&DiskIoGraph),
         use_battery: used_widget_set.contains(&Battery),
         use_power: used_widget_set.contains(&Power),
-        use_claude: used_widget_set.contains(&Claude)
-            || used_widget_set.contains(&ClaudeGraph)
-            || used_widget_set.contains(&ClaudeStats),
-        use_claude_stats: used_widget_set.contains(&ClaudeStats),
+        use_agent: used_widget_set.contains(&AgentGraph) || used_widget_set.contains(&AgentStats),
+        use_agent_stats: used_widget_set.contains(&AgentStats),
     };
 
     let (disk_name_filter, disk_mount_filter) = {
@@ -914,9 +930,8 @@ pub(crate) fn init_app(args: BottomArgs, config: Config) -> Result<(App, BottomL
         disk_state: DiskState::init(disk_state_map),
         disk_io_graph_state: DiskIoGraphStates::init(disk_io_graph_state_map),
         power_graph_state: PowerGraphStates::init(power_graph_state_map),
-        claude_state: ClaudeState::init(claude_state_map),
-        claude_graph_state: ClaudeGraphStates::init(claude_graph_state_map),
-        claude_stats_state: ClaudeStatsStates::init(claude_stats_state_map),
+        agent_graph_state: AgentGraphStates::init(agent_graph_state_map),
+        agent_stats_state: AgentStatsStates::init(agent_stats_state_map),
         battery_state: AppBatteryState::init(battery_state_map),
         basic_table_widget_state,
     };
@@ -1587,15 +1602,15 @@ fn get_pixel_mode(args: &BottomArgs, config: &Config) -> OptionResult<PixelMode>
     Ok(PixelMode::default())
 }
 
-fn get_claude_legend_position(config: &Config) -> OptionResult<Option<LegendPosition>> {
+fn get_agent_legend_position(config: &Config) -> OptionResult<Option<LegendPosition>> {
     parse_legend_position(
         None,
         config
-            .claude
+            .agent
             .as_ref()
             .and_then(|settings| settings.legend_position.as_ref()),
         None,
-        "claude.legend_position",
+        "agent.legend_position",
         None,
     )
 }

@@ -1,19 +1,15 @@
 [package]
-name = "claude-metrics"
+name = "harness-metrics"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.95.0"
 license = "MIT"
-description = "Reads live Claude Code session, token, agent, and cost metrics off the local `~/.claude` tree."
+description = "Reads live token metrics off the local transcript trees of Claude Code, Codex CLI, and pi."
 publish = false
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-
-# `kill(pid, 0)` for pruning the session registry. No portable std equivalent.
-[target.'cfg(unix)'.dependencies]
-libc = "0.2"
 
 [dev-dependencies]
 

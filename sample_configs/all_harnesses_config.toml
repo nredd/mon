@@ -1,0 +1,53 @@
+# Track every coding-agent harness mon knows about, combined, in one view.
+#
+# `source = "all"` merges Claude Code + Codex CLI + pi into one series set, one line/band
+# per harness rather than per model family. This is the direct answer to "how much am I
+# spending across every harness right now" -- each harness is still read the same lagging,
+# tailed-transcript way as the single-harness configs, just summed together per harness
+# instead of split out by model family within one harness.
+#
+# A harness that has never run on this machine (no `~/.claude`, no `~/.codex` or
+# `$CODEX_HOME`, no `~/.pi/agent`) simply contributes no series -- nothing to configure.
+#
+# Run it with:
+#
+#   cargo run --release -- -C sample_configs/all_harnesses_config.toml --pixel_graphs kitty
+
+[flags]
+rate = "1s"
+retention = "1h"
+default_time_value = "5m"
+time_delta = "30s"
+hide_time = true
+
+[agent]
+use_log = true
+stats_use_log = false
+legend_position = "top-right"
+
+[styles.agent]
+# Harness order: Claude, Codex, Pi. Three entries, not five -- `source = "all"` draws one
+# series per harness, not per model family.
+colours = ["#3987e5", "#d95926", "#199e70"]
+
+[styles.widgets]
+border_colour = "#4a4a4a"
+selected_border_colour = "#c98500"
+widget_title = { colour = "#c98500", bold = true }
+
+[styles.graphs]
+graph_colour = "#6a6a6a"
+legend_text = { colour = "#b4b4b4" }
+
+[[row]]
+ratio = 58
+[[row.child]]
+type = "agent_stats"
+source = "all"
+default = true
+
+[[row]]
+ratio = 42
+[[row.child]]
+type = "agent_graph"
+source = "all"

@@ -2,7 +2,7 @@
 # and the `mon` binary name are the only additions to upstream's manifest header -- keeping
 # `[package] name = "bottom"` intact is deliberate so rebases onto upstream stay clean.
 [workspace]
-members = ["crates/claude-metrics"]
+members = ["crates/harness-metrics"]
 # `scripts/schema_gen` is a standalone tool with its own `Cargo.lock`. Adding the
 # workspace above swept it in and broke `scripts/schema/nightly.sh`; it stays out.
 exclude = ["scripts/schema_gen"]
@@ -75,7 +75,7 @@ logging = ["fern", "log"]
 generate_schema = ["schemars", "strum"]
 
 [dependencies]
-claude-metrics = { path = "crates/claude-metrics" }
+harness-metrics = { path = "crates/harness-metrics" }
 # `default-features = false` is mandatory, not tidiness: the default `chafa-dyn` feature
 # runs a `build.rs` that `.expect()`s a pkg-config probe for libchafa and panics the whole
 # build when it is absent.
