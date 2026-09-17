@@ -45,10 +45,37 @@ cargo run --release -- -C sample_configs/all_harnesses_config.toml --pixel_graph
 
 # Custom graph marker.
 cargo run --release -- --marker sextant
-
-# Kitty pixel-graph rendering, with any config/layout.
-cargo run --release -- --pixel_graphs kitty
 ```
+
+### Kitty pixel-graph rendering
+
+Requires a terminal that speaks the [Kitty graphics protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol/) --
+Ghostty, Kitty, or WezTerm. `auto` detects it in most of them; force it explicitly with
+`--pixel_graphs kitty` wherever detection is unreliable (notably tmux -- see below), or just
+to always get it.
+
+```bash
+# Works with any layout/config -- every graph widget in it renders as real pixels instead
+# of cell markers. The default layout already has plenty of graphs to look at:
+cargo run --release -- --pixel_graphs kitty
+
+# The demo config packs more graphs on screen at once, which is where the resolution jump
+# reads the most "slick" -- worth roughly an order of magnitude more vertical resolution on
+# a short graph than the cell-marker path:
+cargo run --release -- -C sample_configs/demo_config.toml --pixel_graphs kitty
+
+# Combine it with any agent config for the token graphs specifically:
+cargo run --release -- -C sample_configs/all_harnesses_config.toml --pixel_graphs kitty
+
+# `auto` instead of `kitty` tries to detect support and falls back to cell markers cleanly
+# when it can't:
+cargo run --release -- --pixel_graphs auto
+```
+
+Under tmux, pass `--pixel_graphs kitty` explicitly rather than `auto` -- tmux's passthrough
+eats the capability query `auto` relies on to detect Kitty support, even though the image
+transport itself works fine through it. `auto` can never select Kitty there, only an explicit
+`kitty` can.
 
 ## What this fork adds
 
