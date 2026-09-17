@@ -1,0 +1,52 @@
+# A pi-only layout for mon.
+#
+# Same shape as `claude_config.toml`/`codex_config.toml`, pointed at `source = "pi"`.
+# `harness-metrics` resolves `$HOME/.pi/agent` itself and reads pi's session JSONL
+# transcripts, so this config works as-is on any machine that has run pi.
+#
+# pi's "family" axis is provider (Anthropic, OpenAI, Google, Other), not model -- pi is
+# multi-provider by design, and a per-model series would balloon as models rotate, so this
+# stays coarser than Claude's or Codex's model-family axis on purpose.
+#
+# Run it with:
+#
+#   cargo run --release -- -C sample_configs/pi_config.toml --pixel_graphs kitty
+
+[flags]
+rate = "1s"
+retention = "1h"
+default_time_value = "5m"
+time_delta = "30s"
+hide_time = true
+
+[agent]
+use_log = true
+stats_use_log = false
+legend_position = "top-right"
+
+[styles.agent]
+# pi's providers in fixed order: Anthropic, OpenAI, Google, then Other. One fewer entry
+# than the Claude/Codex configs since pi only has four buckets, not five.
+colours = ["#3987e5", "#d95926", "#199e70", "#d55181"]
+
+[styles.widgets]
+border_colour = "#4a4a4a"
+selected_border_colour = "#199e70"
+widget_title = { colour = "#199e70", bold = true }
+
+[styles.graphs]
+graph_colour = "#6a6a6a"
+legend_text = { colour = "#b4b4b4" }
+
+[[row]]
+ratio = 58
+[[row.child]]
+type = "agent_stats"
+source = "pi"
+default = true
+
+[[row]]
+ratio = 42
+[[row.child]]
+type = "agent_graph"
+source = "pi"

@@ -142,13 +142,13 @@ These can be set under `[styles.power]`. macOS + Apple Silicon only -- see
 | ------------ | ------------------------------------------------------------------------------------------- | -------------------------------------------- |
 | `colours`    | Colour of each power channel's graph line. Read in channel order: system, CPU, GPU, ANE, RAM. | `colours = ["Red", "Blue", "Green"]`        |
 
-#### Claude
+#### Agent
 
-These can be set under `[styles.claude]` -- see [the Claude widgets page](claude.md).
+These can be set under `[styles.agent]` -- see [the agent widgets page](agent.md).
 
 | Config field | Details                                                                                    | Examples                              |
 | ------------ | ------------------------------------------------------------------------------------------ | ------------------------------------- |
-| `colours`    | Colour of each model family's graph line. Read in family order: Opus, Sonnet, Haiku, Fable, Other. | `colours = ["Red", "Blue", "Green"]` |
+| `colours`    | Colour of each series' graph line. Read in the draw order for that widget instance's `source` -- model-family order for a single harness (e.g. Claude: Opus, Sonnet, Haiku, Fable, Other), or harness order (Claude, Codex, Pi) for `source = "all"`. | `colours = ["Red", "Blue", "Green"]` |
 
 #### Memory
 

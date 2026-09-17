@@ -1,0 +1,53 @@
+# A Codex-CLI-only layout for mon.
+#
+# Same shape as `claude_config.toml`, pointed at `source = "codex"` instead. `harness-metrics`
+# resolves `$CODEX_HOME` (or `~/.codex`) itself and reads Codex's rollout JSONL transcripts,
+# so this config works as-is on any machine that has run the Codex CLI.
+#
+# There is no sessions table here, for either harness -- Codex writes no live PID registry,
+# so there is nothing to build one from. Both harnesses get the same two widgets, read the
+# same lagging, tailed-transcript way.
+#
+# Run it with:
+#
+#   cargo run --release -- -C sample_configs/codex_config.toml --pixel_graphs kitty
+
+[flags]
+rate = "1s"
+retention = "1h"
+default_time_value = "5m"
+time_delta = "30s"
+hide_time = true
+
+[agent]
+use_log = true
+stats_use_log = false
+legend_position = "top-right"
+
+[styles.agent]
+# Codex's model families in fixed order: GPT-5, GPT-4, the o-series (o1/o3/o4), Codex-branded
+# minis, then Other. Same palette shape as the Claude config so the two configs read as a
+# matched pair.
+colours = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181"]
+
+[styles.widgets]
+border_colour = "#4a4a4a"
+selected_border_colour = "#3987e5"
+widget_title = { colour = "#3987e5", bold = true }
+
+[styles.graphs]
+graph_colour = "#6a6a6a"
+legend_text = { colour = "#b4b4b4" }
+
+[[row]]
+ratio = 58
+[[row.child]]
+type = "agent_stats"
+source = "codex"
+default = true
+
+[[row]]
+ratio = 42
+[[row.child]]
+type = "agent_graph"
+source = "codex"

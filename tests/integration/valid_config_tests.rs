@@ -185,15 +185,21 @@ fn test_demo() {
     }
 }
 
-/// The Claude-only sample layout has to keep parsing and drawing, since it is the config
-/// used for hand-testing those widgets.
+/// Every agent sample layout has to keep parsing and drawing, since each is the config used
+/// for hand-testing that `source`'s widgets.
 #[test]
-fn test_claude() {
-    let path: &str = "./sample_configs/claude_config.toml";
-    if std::path::Path::new(path).exists() {
-        run_and_kill(&["-C", path]);
-    } else {
-        println!("Could not read claude config.");
+fn test_agent_sample_configs() {
+    for path in [
+        "./sample_configs/claude_config.toml",
+        "./sample_configs/codex_config.toml",
+        "./sample_configs/pi_config.toml",
+        "./sample_configs/all_harnesses_config.toml",
+    ] {
+        if std::path::Path::new(path).exists() {
+            run_and_kill(&["-C", path]);
+        } else {
+            println!("Could not read {path}.");
+        }
     }
 }
 
@@ -317,23 +323,22 @@ fn test_disk_io_graph() {
     run_and_kill_cfg("./tests/valid_configs/widget/disk_io_graph.toml");
 }
 
-/// The power widget has to actually *draw*, not just parse and stay alive.
+/// Both agent widgets have to actually *draw*, not just parse and stay alive.
 ///
-/// The three dispatch sites in `canvas.rs` all end in `_ => {}`, so a missing arm compiles
+/// The two dispatch sites in `canvas.rs` all end in `_ => {}`, so a missing arm compiles
 /// clean and silently renders nothing. Asserting the rendered title reaches the pty is the
 /// only thing that catches it.
-/// Both Claude widgets have to actually draw, for the same reason the power widget does.
 #[test]
-fn test_claude_widgets_render() {
-    let rendered = run_and_capture(&["-C", "./tests/valid_configs/widget/claude.toml"]);
+fn test_agent_widgets_render() {
+    let rendered = run_and_capture(&["-C", "./tests/valid_configs/widget/agent.toml"]);
 
     assert!(
         !rendered.trim().is_empty(),
-        "the claude layout rendered an empty buffer"
+        "the agent layout rendered an empty buffer"
     );
     assert!(
-        rendered.contains("Claude Sessions"),
-        "the sessions table did not draw its title -- likely a missing dispatch arm in \
+        rendered.contains("Claude Stats"),
+        "the token-history graph did not draw its title -- likely a missing dispatch arm in \
          `canvas.rs`. Rendered output was:\n{rendered}"
     );
     assert!(
@@ -342,6 +347,7 @@ fn test_claude_widgets_render() {
     );
 }
 
+/// The power widget has to actually draw, for the same reason the agent widgets do.
 #[test]
 fn test_power_graph_renders() {
     let rendered = run_and_capture(&["-C", "./tests/valid_configs/widget/power.toml"]);

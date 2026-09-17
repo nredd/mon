@@ -93,16 +93,16 @@ pub struct InnerData {
     prev_io: FxHashMap<(String, String), (u64, u64)>,
     pub(crate) disk_harvest: Vec<DiskWidgetData>,
     pub(crate) temp_data: Vec<TempWidgetData>,
-    pub(crate) claude_sessions: Vec<crate::collection::claude::ClaudeSession>,
-    pub(crate) claude_rate_limits: Option<crate::collection::claude::RateLimits>,
-    /// Tokens per family over a rolling window, oldest bucket first. Empty unless a widget
-    /// that draws it is on screen.
-    pub(crate) claude_history: Vec<claude_metrics::Bucket>,
-    /// Families that contributed anything in that window, in a stable draw order.
-    pub(crate) claude_history_families: Vec<claude_metrics::ModelFamily>,
-    /// Cumulative per-family totals from the previous tick, so the graph can difference
-    /// them into a rate. Keyed by family label.
-    prev_claude_tokens: FxHashMap<String, u64>,
+    /// Windowed history per source (`"claude"`, `"codex"`, `"pi"`, `"all"`), oldest bucket
+    /// first. A source's entry is only present once a harvest has actually carried history
+    /// for it.
+    pub(crate) agent_history: std::collections::HashMap<&'static str, Vec<harness_metrics::Bucket>>,
+    /// Labels that contributed anything in that source's window, in a stable draw order.
+    pub(crate) agent_history_families: std::collections::HashMap<&'static str, Vec<&'static str>>,
+    /// Cumulative per-label totals from the previous tick, so the graph can difference them
+    /// into a rate. Keys are already namespaced `"{source_key}::{label}"`; one shared map
+    /// is fine since the namespacing already keeps sources apart.
+    prev_agent_tokens: FxHashMap<String, u64>,
     #[cfg(feature = "battery")]
     pub(crate) battery_harvest: Vec<batteries::BatteryData>,
 
@@ -126,11 +126,9 @@ impl Default for InnerData {
             prev_io: FxHashMap::default(),
             disk_harvest: Vec::default(),
             temp_data: Vec::default(),
-            claude_sessions: Vec::default(),
-            claude_rate_limits: None,
-            claude_history: Vec::default(),
-            claude_history_families: Vec::default(),
-            prev_claude_tokens: FxHashMap::default(),
+            agent_history: std::collections::HashMap::default(),
+            agent_history_families: std::collections::HashMap::default(),
+            prev_agent_tokens: FxHashMap::default(),
             #[cfg(feature = "battery")]
             battery_harvest: Vec::default(),
             #[cfg(feature = "zfs")]
@@ -239,28 +237,31 @@ impl InnerData {
             }
         }
 
-        if used_widgets.use_claude
-            && let Some(claude) = data.claude
+        if used_widgets.use_agent
+            && let Some(agent) = &data.agent
         {
             let elapsed = harvested_time
                 .duration_since(self.last_update_time)
                 .as_secs_f64();
 
-            self.time_series_data.update_claude_tokens(
-                &claude.totals,
-                &mut self.prev_claude_tokens,
-                elapsed,
-            );
+            for source in &agent.sources {
+                self.time_series_data.update_agent_tokens(
+                    source.key,
+                    &source.cumulative_totals,
+                    &mut self.prev_agent_tokens,
+                    elapsed,
+                );
 
-            self.claude_sessions = claude.sessions;
-            self.claude_rate_limits = claude.rate_limits;
-
-            // Only overwrite when a harvest actually carried history. A harvest with the
-            // stats widget off returns none, and clobbering the window with that would
-            // blank the graph on any tick where the widget happened to be off screen.
-            if !claude.history.is_empty() {
-                self.claude_history = claude.history;
-                self.claude_history_families = claude.history_families;
+                // Only overwrite when a harvest actually carried history. A harvest with
+                // the stats widget off returns none, and clobbering the window with that
+                // would blank the graph on any tick where the widget happened to be off
+                // screen.
+                if !source.buckets.is_empty() {
+                    self.agent_history
+                        .insert(source.key, source.buckets.clone());
+                    self.agent_history_families
+                        .insert(source.key, source.families.clone());
+                }
             }
         }
 

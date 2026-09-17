@@ -5,8 +5,8 @@ use crate::{
     constants,
     utils::input::InputFieldState,
     widgets::{
-        BatteryWidgetState, ClaudeGraphWidgetState, ClaudeStatsWidgetState, ClaudeWidgetState,
-        CpuWidgetState, DiskIoGraphWidgetState, DiskTableWidget, MemWidgetState, NetWidgetState,
+        AgentGraphWidgetState, AgentStatsWidgetState, BatteryWidgetState, CpuWidgetState,
+        DiskIoGraphWidgetState, DiskTableWidget, MemWidgetState, NetWidgetState,
         PowerGraphWidgetState, ProcWidgetState, TempGraphWidgetState, TempWidgetState,
         query::ProcessQuery,
     },
@@ -22,9 +22,8 @@ pub struct AppWidgetStates {
     pub disk_state: DiskState,
     pub disk_io_graph_state: DiskIoGraphStates,
     pub power_graph_state: PowerGraphStates,
-    pub claude_state: ClaudeState,
-    pub claude_graph_state: ClaudeGraphStates,
-    pub claude_stats_state: ClaudeStatsStates,
+    pub agent_graph_state: AgentGraphStates,
+    pub agent_stats_state: AgentStatsStates,
     pub battery_state: AppBatteryState,
     pub basic_table_widget_state: Option<BasicTableWidgetState>,
 }
@@ -229,47 +228,32 @@ impl PowerGraphStates {
     }
 }
 
-/// Holds per-widget state for all Claude sessions table instances in the layout.
-pub struct ClaudeState {
-    pub widget_states: HashMap<u64, ClaudeWidgetState>,
+/// Holds per-widget state for all agent token-rate graph instances in the layout.
+pub struct AgentGraphStates {
+    pub widget_states: HashMap<u64, AgentGraphWidgetState>,
 }
 
-impl ClaudeState {
-    pub fn init(widget_states: HashMap<u64, ClaudeWidgetState>) -> Self {
-        ClaudeState { widget_states }
+impl AgentGraphStates {
+    pub fn init(widget_states: HashMap<u64, AgentGraphWidgetState>) -> Self {
+        AgentGraphStates { widget_states }
     }
 
-    pub fn get_mut_widget_state(&mut self, widget_id: u64) -> Option<&mut ClaudeWidgetState> {
+    pub fn get_mut_widget_state(&mut self, widget_id: u64) -> Option<&mut AgentGraphWidgetState> {
         self.widget_states.get_mut(&widget_id)
     }
 }
 
-/// Holds per-widget state for all Claude token-rate graph instances in the layout.
-pub struct ClaudeGraphStates {
-    pub widget_states: HashMap<u64, ClaudeGraphWidgetState>,
+/// Holds per-widget state for all agent token-history stats instances in the layout.
+pub struct AgentStatsStates {
+    pub widget_states: HashMap<u64, AgentStatsWidgetState>,
 }
 
-impl ClaudeGraphStates {
-    pub fn init(widget_states: HashMap<u64, ClaudeGraphWidgetState>) -> Self {
-        ClaudeGraphStates { widget_states }
+impl AgentStatsStates {
+    pub fn init(widget_states: HashMap<u64, AgentStatsWidgetState>) -> Self {
+        AgentStatsStates { widget_states }
     }
 
-    pub fn get_mut_widget_state(&mut self, widget_id: u64) -> Option<&mut ClaudeGraphWidgetState> {
-        self.widget_states.get_mut(&widget_id)
-    }
-}
-
-/// Holds per-widget state for all Claude token-history stats instances in the layout.
-pub struct ClaudeStatsStates {
-    pub widget_states: HashMap<u64, ClaudeStatsWidgetState>,
-}
-
-impl ClaudeStatsStates {
-    pub fn init(widget_states: HashMap<u64, ClaudeStatsWidgetState>) -> Self {
-        ClaudeStatsStates { widget_states }
-    }
-
-    pub fn get_mut_widget_state(&mut self, widget_id: u64) -> Option<&mut ClaudeStatsWidgetState> {
+    pub fn get_mut_widget_state(&mut self, widget_id: u64) -> Option<&mut AgentStatsWidgetState> {
         self.widget_states.get_mut(&widget_id)
     }
 }

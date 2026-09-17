@@ -76,8 +76,11 @@ pub struct TimeSeriesData {
     /// Power draw in Watts, keyed by [`PowerChannel::label`].
     pub power: HashMap<String, Values>,
 
-    /// Claude token throughput in tokens/second, keyed by model family label.
-    pub claude_tokens: HashMap<String, Values>,
+    /// Agent token throughput in tokens/second, keyed by `"{source_key}::{label}"` so two
+    /// widget instances reading different sources never collide on a label spelled the
+    /// same way in two backends (every backend has its own `Other` catch-all, for
+    /// instance).
+    pub agent_tokens: HashMap<String, Values>,
 
     /// Channels that have reported a nonzero reading at least once this run.
     ///
@@ -292,34 +295,45 @@ impl TimeSeriesData {
         }
     }
 
-    /// Update the Claude token-rate series from cumulative per-family totals.
+    /// Update one source's agent token-rate series from its cumulative per-label totals.
     ///
     /// The collector reports running totals, but a graph of a monotonically climbing line
     /// says nothing useful. This differences them against the previous sample to get a
     /// rate. `previous` is owned by the caller so it survives across ticks.
-    pub fn update_claude_tokens(
-        &mut self, totals: &[(claude_metrics::ModelFamily, claude_metrics::TokenTotals)],
+    ///
+    /// Keys are namespaced `"{source_key}::{label}"` so two widget instances reading
+    /// different sources never collide on a label spelled the same way in two backends
+    /// (every backend has its own `Other` catch-all, for instance).
+    pub fn update_agent_tokens(
+        &mut self, source_key: &str, totals: &[(&'static str, harness_metrics::TokenTotals)],
         previous: &mut HashMap<String, u64>, elapsed_secs: f64,
     ) {
+        let namespaced = |label: &str| format!("{source_key}::{label}");
+
         // A zero or negative interval would divide by zero. It happens on the very first
         // tick, where there is no previous sample to difference against anyway.
         if elapsed_secs <= 0.0 {
-            for (family, totals) in totals {
-                previous.insert(family.label().to_owned(), totals.total());
+            for (label, totals) in totals {
+                previous.insert(namespaced(label), totals.total());
             }
             return;
         }
 
-        let mut not_visited: HashSet<String> = self.claude_tokens.keys().cloned().collect();
+        let mut not_visited: HashSet<String> = self
+            .agent_tokens
+            .keys()
+            .filter(|key| key.starts_with(&format!("{source_key}::")))
+            .cloned()
+            .collect();
 
-        for (family, totals) in totals {
-            let label = family.label().to_owned();
-            not_visited.remove(&label);
+        for (label, totals) in totals {
+            let key = namespaced(label);
+            not_visited.remove(&key);
 
             let current = totals.total();
-            let entry = self.claude_tokens.entry(label.clone()).or_default();
+            let entry = self.agent_tokens.entry(key.clone()).or_default();
 
-            match previous.insert(label, current) {
+            match previous.insert(key, current) {
                 // Totals only ever climb, but a session ending removes its contribution, so
                 // guard the subtraction rather than assuming.
                 Some(before) => {
@@ -331,9 +345,9 @@ impl TimeSeriesData {
             }
         }
 
-        // A family that stopped being used keeps its place in the legend, with a gap.
-        for label in not_visited {
-            if let Some(entry) = self.claude_tokens.get_mut(&label) {
+        // A label that stopped being used keeps its place in the legend, with a gap.
+        for key in not_visited {
+            if let Some(entry) = self.agent_tokens.get_mut(&key) {
                 entry.insert_break();
             }
         }
@@ -476,7 +490,7 @@ impl TimeSeriesData {
             }
         });
 
-        self.claude_tokens.retain(|_, data| {
+        self.agent_tokens.retain(|_, data| {
             let _ = data.prune(end);
 
             if data.no_elements() {

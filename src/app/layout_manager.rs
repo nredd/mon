@@ -844,6 +844,11 @@ pub struct BottomWidget {
     /// The value is the direction to bounce, as well as the parent offset.
     pub parent_reflector: Option<(WidgetDirection, u64)>,
 
+    /// Which harness (or harnesses) an `agent_graph`/`agent_stats` widget instance reads.
+    /// Raw string from the layout config (`"claude"` | `"codex"` | `"pi"` | `"all"`),
+    /// parsed downstream. Ignored by every other widget type.
+    pub source: Option<String>,
+
     /// Top left corner when drawn, for mouse click detection. (x, y)
     ///
     /// TODO: Replace this with just an Option<Rect> for top + bottom.
@@ -871,6 +876,7 @@ impl BottomWidget {
             top_left_corner: None,
             bottom_right_corner: None,
             ratio_override: None,
+            source: None,
         }
     }
 
@@ -922,6 +928,11 @@ impl BottomWidget {
         self.parent_reflector = parent_reflector;
         self
     }
+
+    pub fn source(mut self, source: Option<String>) -> Self {
+        self.source = source;
+        self
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Default)]
@@ -940,9 +951,8 @@ pub enum BottomWidgetType {
     Disk,
     DiskIoGraph,
     Power,
-    Claude,
-    ClaudeGraph,
-    ClaudeStats,
+    AgentGraph,
+    AgentStats,
     BasicCpu,
     BasicMem,
     BasicNet,
@@ -960,7 +970,7 @@ impl BottomWidgetType {
         use BottomWidgetType::*;
         matches!(
             self,
-            Cpu | Net | Mem | TempGraph | DiskIoGraph | Power | ClaudeGraph | ClaudeStats
+            Cpu | Net | Mem | TempGraph | DiskIoGraph | Power | AgentGraph | AgentStats
         )
     }
 
@@ -979,9 +989,8 @@ impl BottomWidgetType {
             // title, not a compile error. Upstream's `DiskIoGraph` is missing for exactly
             // that reason -- left alone here to keep this diff to the power widget.
             Power => "Power",
-            Claude => "Claude",
-            ClaudeGraph => "Claude Tokens",
-            ClaudeStats => "Claude Stats",
+            AgentGraph => "Agent Tokens",
+            AgentStats => "Agent Stats",
             _ => "",
         }
     }
@@ -1002,9 +1011,8 @@ impl std::str::FromStr for BottomWidgetType {
             "disk" => Ok(BottomWidgetType::Disk),
             "disk_io_graph" => Ok(BottomWidgetType::DiskIoGraph),
             "power" => Ok(BottomWidgetType::Power),
-            "claude" => Ok(BottomWidgetType::Claude),
-            "claude_graph" => Ok(BottomWidgetType::ClaudeGraph),
-            "claude_stats" => Ok(BottomWidgetType::ClaudeStats),
+            "agent_graph" => Ok(BottomWidgetType::AgentGraph),
+            "agent_stats" => Ok(BottomWidgetType::AgentStats),
             "empty" => Ok(BottomWidgetType::Empty),
             #[cfg(feature = "battery")]
             "battery" | "batt" => Ok(BottomWidgetType::Battery),
@@ -1034,11 +1042,9 @@ Supported widget names:
 +--------------------------------+
 |              power             |
 +--------------------------------+
-|             claude             |
+|            agent_graph         |
 +--------------------------------+
-|          claude_graph          |
-+--------------------------------+
-|          claude_stats          |
+|            agent_stats         |
 +--------------------------------+
 |          batt, battery         |
 +--------------------------------+
@@ -1072,11 +1078,9 @@ Supported widget names:
 +--------------------------------+
 |              power             |
 +--------------------------------+
-|             claude             |
+|            agent_graph         |
 +--------------------------------+
-|          claude_graph          |
-+--------------------------------+
-|          claude_stats          |
+|            agent_stats         |
 +--------------------------------+
 |              empty             |
 +--------------------------------+
@@ -1102,10 +1106,11 @@ pub struct UsedWidgets {
     pub use_disk_io_graph: bool,
     pub use_battery: bool,
     pub use_power: bool,
-    pub use_claude: bool,
-    /// Whether any widget needs the rolling token history, which is the only part of a
-    /// Claude harvest that reads transcripts outside the live sessions.
-    pub use_claude_stats: bool,
+    pub use_agent: bool,
+    /// Whether any widget needs the rolling token history, which every `agent_stats`
+    /// widget always does, and which every harness now reads the exact same lagging
+    /// tailed-transcript way as the rate graph.
+    pub use_agent_stats: bool,
 }
 
 #[cfg(test)]
@@ -1137,57 +1142,42 @@ mod added_widget_tests {
     /// There are two such tables, picked by `cfg(feature = "battery")`, so only one is
     /// compiled into any given build -- this checks whichever one is active, and CI builds
     /// both feature configurations.
-    /// Same three catch-all sites, for both Claude widgets.
+    /// Same catch-all sites, for both agent widgets.
     #[test]
-    fn claude_widgets_are_registered_everywhere_a_catch_all_would_hide() {
-        let table: BottomWidgetType = "claude".parse().expect("`claude` must parse");
-        let graph: BottomWidgetType = "claude_graph".parse().expect("`claude_graph` must parse");
+    fn agent_widgets_are_registered_everywhere_a_catch_all_would_hide() {
+        let graph: BottomWidgetType = "agent_graph".parse().expect("`agent_graph` must parse");
+        let stats: BottomWidgetType = "agent_stats".parse().expect("`agent_stats` must parse");
 
-        assert_eq!(table, BottomWidgetType::Claude);
-        assert_eq!(graph, BottomWidgetType::ClaudeGraph);
+        assert_eq!(graph, BottomWidgetType::AgentGraph);
+        assert_eq!(stats, BottomWidgetType::AgentStats);
 
-        assert!(
-            !table.is_widget_graph(),
-            "the sessions table is a table, not a graph -- it must not get timeseries state"
-        );
         assert!(
             graph.is_widget_graph(),
             "the token-rate graph must count as a graph or it gets no timeseries state"
         );
-
-        let stats: BottomWidgetType = "claude_stats".parse().expect("`claude_stats` must parse");
-        assert_eq!(stats, BottomWidgetType::ClaudeStats);
         assert!(
             stats.is_widget_graph(),
             "the stats graph must count as a graph or it gets no timeseries state"
         );
 
-        assert_eq!(table.get_pretty_name(), "Claude");
-        assert_eq!(graph.get_pretty_name(), "Claude Tokens");
-        assert_eq!(stats.get_pretty_name(), "Claude Stats");
+        assert_eq!(graph.get_pretty_name(), "Agent Tokens");
+        assert_eq!(stats.get_pretty_name(), "Agent Stats");
     }
 
     #[test]
-    fn claude_widgets_are_listed_in_the_help_table() {
+    fn agent_widgets_are_listed_in_the_help_table() {
         let err = "definitely_not_a_widget"
             .parse::<BottomWidgetType>()
             .expect_err("an unknown widget name must be an error")
             .to_string();
 
-        for name in ["claude_graph", "claude_stats"] {
+        for name in ["agent_graph", "agent_stats"] {
             assert_eq!(
                 err.matches(name).count(),
                 1,
                 "the widget-name table must list `{name}`. Error was:\n{err}"
             );
         }
-
-        // `claude` also appears inside `claude_graph` and `claude_stats`, hence three.
-        assert_eq!(
-            err.matches("claude").count(),
-            3,
-            "the widget-name table must list `claude`. Error was:\n{err}"
-        );
     }
 
     #[test]

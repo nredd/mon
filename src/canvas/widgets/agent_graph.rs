@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 
-use claude_metrics::ModelFamily;
 use ratatui::{
     Frame,
     layout::{Constraint, Rect},
@@ -17,31 +16,21 @@ use crate::{
     components::time_series::GraphDrawCtx,
 };
 
-/// Model families in a fixed draw order.
-///
-/// The order is also the index into the theme's colour list. Fixed rather than sorted or
-/// rank-ordered on purpose: a family that goes quiet and drops out must not repaint the
-/// ones that remain.
-const FAMILIES: [ModelFamily; 5] = [
-    ModelFamily::Opus,
-    ModelFamily::Sonnet,
-    ModelFamily::Haiku,
-    ModelFamily::Fable,
-    ModelFamily::Other,
-];
-
 impl Painter {
-    pub fn draw_claude_graph(
+    pub fn draw_agent_graph(
         &self, f: &mut Frame<'_>, app_state: &mut App, draw_loc: Rect, widget_id: u64,
     ) {
         if let Some(widget_state) = app_state
             .states
-            .claude_graph_state
+            .agent_graph_state
             .get_mut_widget_state(widget_id)
         {
             let shared_data = app_state.data_store.get_data();
-            let token_data = &shared_data.time_series_data.claude_tokens;
+            let token_data = &shared_data.time_series_data.agent_tokens;
             let times = &shared_data.time_series_data.time;
+
+            let source_key = widget_state.source.key();
+            let key_for = |label: &str| format!("{source_key}::{label}");
 
             let border_style = self.get_border_style(widget_id, app_state.current_widget.widget_id);
             let graph_state = widget_state.graph.state_mut();
@@ -53,17 +42,19 @@ impl Painter {
             );
 
             let use_log = widget_state.use_log;
+            let labels = &widget_state.family_labels;
 
-            // Only families that have actually produced a series. A family nobody has used
+            // Only labels that have actually produced a series. A label nobody has used
             // would otherwise take a legend slot to say nothing.
-            let present: Vec<ModelFamily> = FAMILIES
-                .into_iter()
-                .filter(|family| token_data.contains_key(family.label()))
+            let present: Vec<&'static str> = labels
+                .iter()
+                .copied()
+                .filter(|label| token_data.contains_key(&key_for(label)))
                 .collect();
 
             let visible = present
                 .iter()
-                .filter_map(|family| token_data.get(family.label()));
+                .filter_map(|label| token_data.get(&key_for(label)));
             let y_max = widget_state.graph.y_max(visible, times);
 
             let (adjusted_y_max, y_labels) = if use_log {
@@ -72,16 +63,16 @@ impl Painter {
                 adjust_tokens_linear(y_max)
             };
 
-            let colours = &self.styles.claude_colour_styles;
+            let colours = &self.styles.agent_colour_styles;
 
             let graph_data: Vec<GraphData<'_, f64>> = present
                 .iter()
-                .filter_map(|family| {
-                    let values = token_data.get(family.label())?;
+                .filter_map(|label| {
+                    let values = token_data.get(&key_for(label))?;
 
-                    // Index by the family's fixed position, not by its position among the
-                    // present ones, so colours stay put as families come and go.
-                    let index = FAMILIES.iter().position(|f| f == family).unwrap_or(0);
+                    // Index by the label's fixed position, not by its position among the
+                    // present ones, so colours stay put as labels come and go.
+                    let index = labels.iter().position(|l| l == label).unwrap_or(0);
                     let style = if colours.is_empty() {
                         Style::default()
                     } else {
@@ -92,7 +83,7 @@ impl Painter {
 
                     Some(
                         GraphData::default()
-                            .name(format!("{:<7}{}", family.label(), format_rate(rate)).into())
+                            .name(format!("{:<7}{}", label, format_rate(rate)).into())
                             .style(style)
                             .time(times)
                             .values(values),
@@ -113,11 +104,13 @@ impl Painter {
                 ChartScaling::Linear
             };
 
+            let title = format!(" {} Tokens ", widget_state.source.title_word());
+
             widget_state.graph.draw(
                 f,
                 draw_loc,
                 GraphDrawCtx {
-                    title: " Claude Tokens ".into(),
+                    title: title.into(),
                     border_style,
                     title_style: self.styles.widget_title_style,
                     graph_style: self.styles.graph_style,
@@ -127,7 +120,7 @@ impl Painter {
                     hide_x_labels,
                     is_selected: app_state.current_widget.widget_id == widget_id,
                     is_expanded: app_state.is_expanded,
-                    legend_position: app_state.app_config_fields.claude_legend_position,
+                    legend_position: app_state.app_config_fields.agent_legend_position,
                     legend_constraints: Some(legend_constraints),
                     pixel_renderer: self.pixel_renderer(),
                     last_time: times.last().copied(),
@@ -285,19 +278,5 @@ mod tests {
         let (ceiling, labels) = adjust_tokens_linear(0.0);
         assert!(ceiling > 0.0, "a zero ceiling would collapse the y-axis");
         assert_eq!(labels.len(), 3);
-    }
-
-    #[test]
-    fn families_keep_a_stable_colour_index() {
-        // The whole point of indexing by family rather than by draw position: a family
-        // going quiet must not recolour the ones still on screen.
-        assert_eq!(
-            FAMILIES.iter().position(|f| *f == ModelFamily::Opus),
-            Some(0)
-        );
-        assert_eq!(
-            FAMILIES.iter().position(|f| *f == ModelFamily::Fable),
-            Some(3)
-        );
     }
 }

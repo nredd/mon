@@ -14,9 +14,9 @@ mod linux {
     pub mod utils;
 }
 
+pub mod agent;
 #[cfg(feature = "battery")]
 pub mod batteries;
-pub mod claude;
 pub mod cpu;
 pub mod disks;
 pub mod error;
@@ -58,7 +58,7 @@ pub struct Data {
     #[cfg(feature = "battery")]
     pub list_of_batteries: Option<Vec<batteries::BatteryData>>,
     pub power: Option<power::PowerData>,
-    pub claude: Option<claude::ClaudeData>,
+    pub agent: Option<agent::AgentData>,
     #[cfg(feature = "zfs")]
     pub arc: Option<memory::MemData>,
     #[cfg(feature = "gpu")]
@@ -83,7 +83,7 @@ impl Default for Data {
             #[cfg(feature = "battery")]
             list_of_batteries: None,
             power: None,
-            claude: None,
+            agent: None,
             #[cfg(feature = "zfs")]
             arc: None,
             #[cfg(feature = "gpu")]
@@ -197,8 +197,8 @@ pub struct DataCollector {
     #[cfg(target_os = "macos")]
     power_interval_ms: u32,
 
-    /// Built lazily, the first time a layout actually asks for Claude data.
-    claude_collector: Option<claude::ClaudeCollector>,
+    /// Built lazily, the first time a layout actually asks for agent data.
+    agent_collector: Option<agent::AgentCollector>,
 
     #[cfg(unix)]
     user_table: processes::UserTable,
@@ -252,7 +252,7 @@ impl DataCollector {
             power_sampler: None,
             #[cfg(target_os = "macos")]
             power_interval_ms: 1000,
-            claude_collector: None,
+            agent_collector: None,
             filters,
             #[cfg(unix)]
             user_table: Default::default(),
@@ -427,7 +427,7 @@ impl DataCollector {
         #[cfg(target_os = "macos")]
         self.update_power();
 
-        self.update_claude();
+        self.update_agent();
 
         #[cfg(feature = "gpu")]
         self.update_gpus();
@@ -636,18 +636,18 @@ impl DataCollector {
         self.data.power = sampler.latest().cloned();
     }
 
-    /// Update Claude Code metrics.
+    /// Update coding-agent metrics.
     #[inline]
-    fn update_claude(&mut self) {
-        if !self.widgets_to_harvest.use_claude {
+    fn update_agent(&mut self) {
+        if !self.widgets_to_harvest.use_agent {
             return;
         }
 
         let collector = self
-            .claude_collector
-            .get_or_insert_with(claude::ClaudeCollector::new);
+            .agent_collector
+            .get_or_insert_with(agent::AgentCollector::new);
 
-        self.data.claude = collector.harvest(self.widgets_to_harvest.use_claude_stats);
+        self.data.agent = Some(collector.harvest(self.widgets_to_harvest.use_agent_stats));
     }
 
     /// Update battery information.

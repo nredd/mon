@@ -26,6 +26,30 @@
 > additions, described below. Everything past that section is upstream's documentation and
 > still applies -- the binary is just named `mon` instead of `btm`. See `NOTICE`.
 
+## Quickstart
+
+One `cargo run` example per addition, run from a source checkout rather than assuming an
+installed `mon`. Drop `--release` for a faster compile / slower runtime while iterating.
+
+```bash
+# Apple Silicon power widget -- macOS + Apple Silicon only.
+cargo run --release -- --pixel_graphs kitty
+
+# Agent token metrics for one harness.
+cargo run --release -- -C sample_configs/claude_config.toml --pixel_graphs kitty
+cargo run --release -- -C sample_configs/codex_config.toml --pixel_graphs kitty
+cargo run --release -- -C sample_configs/pi_config.toml --pixel_graphs kitty
+
+# Track every harness's token usage in one view -- the flagship example.
+cargo run --release -- -C sample_configs/all_harnesses_config.toml --pixel_graphs kitty
+
+# Custom graph marker.
+cargo run --release -- --marker sextant
+
+# Kitty pixel-graph rendering, with any config/layout.
+cargo run --release -- --pixel_graphs kitty
+```
+
 ## What this fork adds
 
 Nothing here changes the default layout or default behaviour. Every addition is opt-in.
@@ -43,37 +67,34 @@ drawing flat lines that read as "idle".
 Cluster labels come from `SocInfo` rather than being hardcoded: they are `E`/`P` on M1-M4
 but `P`/`S` on M5+.
 
-### Claude Code metrics
+### Agent token metrics
 
-Three widgets reading live [Claude Code](https://claude.com/claude-code) activity off
-`~/.claude`:
+Two widgets, `agent_graph` and `agent_stats`, tracking live token usage for a coding-agent
+harness off its own local transcript files. Harness-agnostic: which harness (or harnesses) a
+given instance reads is set per-instance with `source = "claude" | "codex" | "pi" | "all"`.
 
-- `claude` -- a sortable table of live sessions: name, directory, model family, state,
-  tokens, cost, context-window occupancy, subagent count
-- `claude_graph` -- token throughput by model family over time, on a log axis by default
-- `claude_stats` -- the equivalent of Claude Code's own `/status` stats screen, as stacked
-  rounded-staircase bands of token spend by model family. That screen bars by day; this buckets by minute over
-  the last hour, so the shape of a working session is visible rather than collapsed into a
-  single bar. Built by walking `~/.claude/projects` and attributing each record to a bucket
-  from its own timestamp, so the window is complete the moment the widget appears rather
-  than having to be accumulated live -- and it keeps the tokens of sessions that have since
-  exited, which the live-session view cannot
+- `agent_graph` -- token throughput by series over time, on a log axis by default
+- `agent_stats` -- the equivalent of Claude Code's own `/status` stats screen, as stacked
+  rounded-staircase bands of token spend by series. That screen bars by day; this buckets by
+  minute over the last hour, so the shape of a working session is visible rather than
+  collapsed into a single bar
 
-Backed by the `claude-metrics` workspace crate, which has no dependency on bottom. Counting
-is the fiddly part and the rules are documented in that crate: dedupe on
-`requestId` + `message.id`, take `cache_creation_input_tokens` without the ephemeral buckets
-it already sums, ignore `usage.iterations[]`, and treat `output_tokens` as a running total
-across a message's per-content-block records.
+A series is a model family for a single-harness `source` (e.g. Claude: Opus/Sonnet/Haiku/
+Fable/Other), or a harness (Claude/Codex/Pi) for `source = "all"`.
 
-Cost, context, and rate limits need a small tee in your statusline -- see
-[the docs](https://github.com/nredd/mon/blob/main/docs/content/usage/widgets/claude.md).
-Without it those columns read `N/A` and everything else still works.
+There is no live-session table. Codex and pi write no PID registry the way Claude Code does,
+so rather than give one harness a live view the others can't have, every harness -- Claude
+included -- is read the same lagging way: tailing whatever transcripts it has written to
+disk, a refresh tick behind the actual model call.
 
-`sample_configs/claude_config.toml` is a ready-made layout with all three and nothing else:
+Backed by the `harness-metrics` workspace crate, which has no dependency on bottom and knows
+nothing about the other two. Counting is the fiddly part and the rules -- and each harness's
+transcript format -- are documented in that crate and in
+[the docs](https://github.com/nredd/mon/blob/main/docs/content/usage/widgets/agent.md).
 
-```console
-$ mon -C sample_configs/claude_config.toml --pixel_graphs kitty
-```
+Four ready-made layouts, each drawing a stats graph and a rate graph and nothing else:
+`sample_configs/claude_config.toml`, `codex_config.toml`, `pi_config.toml`, and
+`all_harnesses_config.toml` (every harness combined -- see the Quickstart above).
 
 ### Configurable graph markers
 

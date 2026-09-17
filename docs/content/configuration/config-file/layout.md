@@ -50,14 +50,19 @@ The following `type` values are supported:
 | `"disk"`                            | Disk table               |
 | `"disk_io_graph"`                   | Disk I/O graph           |
 | `"power"`                           | Power draw graph         |
-| `"claude"`                          | Claude sessions table    |
-| `"claude_graph"`                    | Claude token-rate graph  |
-| `"claude_stats"`                    | Claude token history     |
+| `"agent_graph"`                     | Agent token-rate graph   |
+| `"agent_stats"`                     | Agent token history      |
 | `"empty"`                           | An empty space           |
 | `"batt", "battery"`                 | Battery statistics       |
 
 Each component of the layout accepts a `ratio` value. If this is not set, it defaults to 1.
 
-Furthermore, you can have duplicate widgets.
+`agent_graph` and `agent_stats` also accept a `source` value on that same widget entry:
+`source = "claude" | "codex" | "pi" | "all"`, defaulting to `"claude"` when omitted. See
+[the agent widgets page](../../usage/widgets/agent.md) for what each source reads and what
+`"all"` merges together.
+
+Furthermore, you can have duplicate widgets -- including two `agent_graph`/`agent_stats`
+entries with different `source` values side by side.
 
 For an example, look at the [default config](https://github.com/ClementTsang/bottom/blob/main/sample_configs/default_config.toml), which contains the default layout.
